@@ -99,14 +99,14 @@ jobs:
         working-directory: ./frontend
         run: npm run build
         env:
-          API_URL: ${{ github.ref == 'refs/heads/main' && 'https://api.framevideos.com' || 'https://staging-api.framevideos.com' }}
+          NEXT_PUBLIC_API_URL: ${{ github.ref == 'refs/heads/main' && 'https://api.framevideos.com/api/v1' || 'https://staging-api.framevideos.com/api/v1' }}
       
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: frame-videos
-          directory: ./frontend/.next
+          projectName: frame-videos-frontend
+          directory: ./frontend/out
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
