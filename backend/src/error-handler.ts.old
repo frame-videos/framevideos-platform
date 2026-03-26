@@ -1,0 +1,231 @@
+/**
+ * Centralized Error Handler for Frame Videos
+ * Provides consistent error responses across all endpoints
+ */
+
+export enum ErrorCode {
+  // 400 - Bad Request
+  INVALID_INPUT = 'INVALID_INPUT',
+  MISSING_FIELD = 'MISSING_FIELD',
+  INVALID_EMAIL = 'INVALID_EMAIL',
+  WEAK_PASSWORD = 'WEAK_PASSWORD',
+
+  // 401 - Unauthorized
+  UNAUTHORIZED = 'UNAUTHORIZED',
+  INVALID_TOKEN = 'INVALID_TOKEN',
+  TOKEN_EXPIRED = 'TOKEN_EXPIRED',
+  INVALID_CREDENTIALS = 'INVALID_CREDENTIALS',
+
+  // 403 - Forbidden
+  FORBIDDEN = 'FORBIDDEN',
+  INSUFFICIENT_PERMISSIONS = 'INSUFFICIENT_PERMISSIONS',
+  TENANT_MISMATCH = 'TENANT_MISMATCH',
+
+  // 404 - Not Found
+  NOT_FOUND = 'NOT_FOUND',
+  USER_NOT_FOUND = 'USER_NOT_FOUND',
+  VIDEO_NOT_FOUND = 'VIDEO_NOT_FOUND',
+  TENANT_NOT_FOUND = 'TENANT_NOT_FOUND',
+  CATEGORY_NOT_FOUND = 'CATEGORY_NOT_FOUND',
+  TAG_NOT_FOUND = 'TAG_NOT_FOUND',
+
+  // 409 - Conflict
+  DUPLICATE_EMAIL = 'DUPLICATE_EMAIL',
+  DUPLICATE_SLUG = 'DUPLICATE_SLUG',
+  RESOURCE_EXISTS = 'RESOURCE_EXISTS',
+
+  // 429 - Too Many Requests
+  RATE_LIMITED = 'RATE_LIMITED',
+  ACCOUNT_LOCKED = 'ACCOUNT_LOCKED',
+
+  // 500 - Internal Server Error
+  INTERNAL_ERROR = 'INTERNAL_ERROR',
+  DATABASE_ERROR = 'DATABASE_ERROR',
+  STORAGE_ERROR = 'STORAGE_ERROR',
+}
+
+export interface AppError {
+  code: ErrorCode;
+  message: string;
+  statusCode: number;
+  details?: Record<string, any>;
+  timestamp: string;
+  requestId?: string;
+}
+
+export class FrameVideosError extends Error {
+  constructor(
+    public code: ErrorCode,
+    public statusCode: number,
+    message: string,
+    public details?: Record<string, any>
+  ) {
+    super(message);
+    this.name = 'FrameVideosError';
+  }
+}
+
+/**
+ * Create a standardized error response
+ */
+export function createErrorResponse(
+  code: ErrorCode,
+  message: string,
+  statusCode: number,
+  details?: Record<string, any>,
+  requestId?: string
+): AppError {
+  return {
+    code,
+    message,
+    statusCode,
+    details,
+    timestamp: new Date().toISOString(),
+    requestId,
+  };
+}
+
+/**
+ * Get HTTP status code from error code
+ */
+export function getStatusCode(code: ErrorCode): number {
+  const statusMap: Record<ErrorCode, number> = {
+    // 400
+    [ErrorCode.INVALID_INPUT]: 400,
+    [ErrorCode.MISSING_FIELD]: 400,
+    [ErrorCode.INVALID_EMAIL]: 400,
+    [ErrorCode.WEAK_PASSWORD]: 400,
+
+    // 401
+    [ErrorCode.UNAUTHORIZED]: 401,
+    [ErrorCode.INVALID_TOKEN]: 401,
+    [ErrorCode.TOKEN_EXPIRED]: 401,
+    [ErrorCode.INVALID_CREDENTIALS]: 401,
+
+    // 403
+    [ErrorCode.FORBIDDEN]: 403,
+    [ErrorCode.INSUFFICIENT_PERMISSIONS]: 403,
+    [ErrorCode.TENANT_MISMATCH]: 403,
+
+    // 404
+    [ErrorCode.NOT_FOUND]: 404,
+    [ErrorCode.USER_NOT_FOUND]: 404,
+    [ErrorCode.VIDEO_NOT_FOUND]: 404,
+    [ErrorCode.TENANT_NOT_FOUND]: 404,
+    [ErrorCode.CATEGORY_NOT_FOUND]: 404,
+    [ErrorCode.TAG_NOT_FOUND]: 404,
+
+    // 409
+    [ErrorCode.DUPLICATE_EMAIL]: 409,
+    [ErrorCode.DUPLICATE_SLUG]: 409,
+    [ErrorCode.RESOURCE_EXISTS]: 409,
+
+    // 429
+    [ErrorCode.RATE_LIMITED]: 429,
+    [ErrorCode.ACCOUNT_LOCKED]: 429,
+
+    // 500
+    [ErrorCode.INTERNAL_ERROR]: 500,
+    [ErrorCode.DATABASE_ERROR]: 500,
+    [ErrorCode.STORAGE_ERROR]: 500,
+  };
+
+  return statusMap[code] || 500;
+}
+
+/**
+ * Error logger with context
+ */
+export interface ErrorContext {
+  tenantId?: string;
+  userId?: string;
+  endpoint?: string;
+  method?: string;
+  ip?: string;
+  userAgent?: string;
+}
+
+export function logError(error: FrameVideosError, context: ErrorContext): void {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    code: error.code,
+    message: error.message,
+    statusCode: error.statusCode,
+    details: error.details,
+    context,
+  };
+
+  // In production, this would send to a logging service (e.g., Sentry, DataDog)
+  console.error('[FrameVideos Error]', JSON.stringify(logEntry, null, 2));
+}
+
+/**
+ * Validate required fields
+ */
+export function validateRequired(
+  data: Record<string, any>,
+  fields: string[]
+): void {
+  const missing = fields.filter((field) => !data[field]);
+
+  if (missing.length > 0) {
+    throw new FrameVideosError(
+      ErrorCode.MISSING_FIELD,
+      400,
+      `Missing required fields: ${missing.join(', ')}`,
+      { missing }
+    );
+  }
+}
+
+/**
+ * Validate email format
+ */
+export function validateEmail(email: string): void {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (!emailRegex.test(email)) {
+    throw new FrameVideosError(
+      ErrorCode.INVALID_EMAIL,
+      400,
+      'Invalid email format'
+    );
+  }
+}
+
+/**
+ * Validate password strength
+ */
+export function validatePasswordStrength(password: string): {
+  valid: boolean;
+  strength: 'weak' | 'medium' | 'strong';
+  checks: Record<string, boolean>;
+} {
+  const checks = {
+    minLength: password.length >= 8,
+    hasUppercase: /[A-Z]/.test(password),
+    hasLowercase: /[a-z]/.test(password),
+    hasNumber: /\d/.test(password),
+    hasSpecial: /[!@#$%^&*(),.?":{}|<>]/.test(password),
+  };
+
+  const passedChecks = Object.values(checks).filter(Boolean).length;
+  let strength: 'weak' | 'medium' | 'strong' = 'weak';
+
+  if (passedChecks === 5) {
+    strength = 'strong';
+  } else if (passedChecks >= 3) {
+    strength = 'medium';
+  }
+
+  if (strength === 'weak') {
+    throw new FrameVideosError(
+      ErrorCode.WEAK_PASSWORD,
+      400,
+      'Password does not meet strength requirements',
+      { checks }
+    );
+  }
+
+  return { valid: true, strength, checks };
+}

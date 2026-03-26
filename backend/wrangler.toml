@@ -1,0 +1,68 @@
+name = "frame-videos"
+main = "src/index-secure.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "frame-videos-prod"
+routes = [
+  { pattern = "api.framevideos.com/*", zone_name = "framevideos.com" }
+]
+
+[[env.production.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "frame-videos-storage"
+
+[[env.production.kv_namespaces]]
+binding = "CACHE"
+id = "c73b1250b86b4b42b108f6b2b6a3829f"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "frame-videos-db"
+database_id = "083094ae-7cfa-4fea-9f5e-8ab006498e6c"
+
+[env.staging]
+name = "frame-videos-staging"
+# routes = [
+#   { pattern = "staging.framevideos.com/*", zone_name = "castelodigital.net" }
+# ]
+
+# [[env.staging.r2_buckets]]
+# binding = "STORAGE"
+# bucket_name = "frame-videos-storage-preview"
+
+[[env.staging.kv_namespaces]]
+binding = "CACHE"
+id = "c73b1250b86b4b42b108f6b2b6a3829f"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "frame-videos-db"
+database_id = "083094ae-7cfa-4fea-9f5e-8ab006498e6c"
+
+# R2 Bucket Binding
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "frame-videos-storage"
+preview_bucket_name = "frame-videos-storage-preview"
+
+# KV Namespace for cache
+[[kv_namespaces]]
+binding = "CACHE"
+id = "c73b1250b86b4b42b108f6b2b6a3829f"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "frame-videos-db"
+database_id = "083094ae-7cfa-4fea-9f5e-8ab006498e6c"
+
+# Environment variables
+[env.production.vars]
+ENVIRONMENT = "production"
+API_URL = "https://api.framevideos.com"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+API_URL = "https://staging-api.framevideos.com"

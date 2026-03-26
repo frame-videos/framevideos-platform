@@ -1,0 +1,14 @@
+node_modules/
+.wrangler/
+.vercel/
+.next/
+out/
+dist/
+.cache/
+*.log
+*.pack
+*.pack.gz
+*.pack.old
+playwright-report/
+test-results/
+.env.local

@@ -1,0 +1,362 @@
+/**
+ * Analytics Routes
+ * Tracks views, likes, and provides analytics dashboard
+ */
+
+import { Hono } from 'hono';
+import { secureDb as db } from '../database-secure';
+import { verifyToken, extractToken } from '../auth';
+import {
+  asyncHandler,
+  ValidationError,
+  AuthenticationError,
+  AuthorizationError,
+  NotFoundError,
+  validateRequired,
+  validateUUID,
+  withRetry,
+} from '../error-handler';
+
+const analytics = new Hono();
+
+/**
+ * Get analytics for a specific video
+ * GET /api/v1/analytics/videos/:id
+ */
+analytics.get('/videos/:id', async (c) => {
+  try {
+    // Get tenant from token
+    const token = extractToken(c);
+    if (!token) {
+      throw new FrameVideosError(
+        ErrorCode.UNAUTHORIZED,
+        401,
+        'Missing authentication token'
+      );
+    }
+
+    const user = await verifyToken(token);
+    if (!user) {
+      throw new FrameVideosError(
+        ErrorCode.INVALID_TOKEN,
+        401,
+        'Invalid token'
+      );
+    }
+
+    const videoId = c.req.param('id');
+    const tenantId = user.tenantId;
+
+    // Get video
+    const video = db.getVideo(tenantId, videoId);
+    if (!video) {
+      throw new FrameVideosError(
+        ErrorCode.VIDEO_NOT_FOUND,
+        404,
+        `Video ${videoId} not found`
+      );
+    }
+
+    // Return analytics
+    return c.json({
+      videoId,
+      title: video.title,
+      views: video.views || 0,
+      likes: video.likes || 0,
+      comments: video.comments || 0,
+      shares: video.shares || 0,
+      engagementRate:
+        ((video.likes || 0) + (video.comments || 0)) / Math.max(video.views || 1, 1),
+      createdAt: video.createdAt,
+      updatedAt: video.updatedAt,
+    });
+  } catch (error: any) {
+    if (error instanceof FrameVideosError) {
+      return c.json(
+        {
+          error: error.code,
+          message: error.message,
+        },
+        error.statusCode
+      );
+    }
+
+    return c.json(
+      {
+        error: ErrorCode.INTERNAL_ERROR,
+        message: 'Failed to get analytics',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * Track a view for a video
+ * POST /api/v1/analytics/videos/:id/view
+ */
+analytics.post('/videos/:id/view', async (c) => {
+  try {
+    // Get tenant from token (optional for views)
+    const token = extractToken(c);
+    let tenantId = 'default';
+
+    if (token) {
+      const user = await verifyToken(token);
+      if (user) {
+        tenantId = user.tenantId;
+      }
+    }
+
+    const videoId = c.req.param('id');
+
+    // Increment views
+    const video = db.getVideo(tenantId, videoId);
+    if (!video) {
+      throw new FrameVideosError(
+        ErrorCode.VIDEO_NOT_FOUND,
+        404,
+        `Video ${videoId} not found`
+      );
+    }
+
+    video.views = (video.views || 0) + 1;
+    db.updateVideo(tenantId, videoId, video);
+
+    return c.json({ views: video.views });
+  } catch (error: any) {
+    if (error instanceof FrameVideosError) {
+      return c.json(
+        {
+          error: error.code,
+          message: error.message,
+        },
+        error.statusCode
+      );
+    }
+
+    return c.json(
+      {
+        error: ErrorCode.INTERNAL_ERROR,
+        message: 'Failed to track view',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * Like/unlike a video
+ * POST /api/v1/analytics/videos/:id/like
+ */
+analytics.post('/videos/:id/like', async (c) => {
+  try {
+    // Get tenant from token
+    const token = extractToken(c);
+    if (!token) {
+      throw new FrameVideosError(
+        ErrorCode.UNAUTHORIZED,
+        401,
+        'Missing authentication token'
+      );
+    }
+
+    const user = await verifyToken(token);
+    if (!user) {
+      throw new FrameVideosError(
+        ErrorCode.INVALID_TOKEN,
+        401,
+        'Invalid token'
+      );
+    }
+
+    const videoId = c.req.param('id');
+    const tenantId = user.tenantId;
+    const { liked } = await c.req.json();
+
+    // Get video
+    const video = db.getVideo(tenantId, videoId);
+    if (!video) {
+      throw new FrameVideosError(
+        ErrorCode.VIDEO_NOT_FOUND,
+        404,
+        `Video ${videoId} not found`
+      );
+    }
+
+    // Update likes
+    if (liked) {
+      video.likes = (video.likes || 0) + 1;
+    } else {
+      video.likes = Math.max((video.likes || 0) - 1, 0);
+    }
+
+    db.updateVideo(tenantId, videoId, video);
+
+    return c.json({ likes: video.likes, liked });
+  } catch (error: any) {
+    if (error instanceof FrameVideosError) {
+      return c.json(
+        {
+          error: error.code,
+          message: error.message,
+        },
+        error.statusCode
+      );
+    }
+
+    return c.json(
+      {
+        error: ErrorCode.INTERNAL_ERROR,
+        message: 'Failed to update like',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * Get user's dashboard analytics
+ * GET /api/v1/analytics/dashboard
+ */
+analytics.get('/dashboard', async (c) => {
+  try {
+    // Get tenant from token
+    const token = extractToken(c);
+    if (!token) {
+      throw new FrameVideosError(
+        ErrorCode.UNAUTHORIZED,
+        401,
+        'Missing authentication token'
+      );
+    }
+
+    const user = await verifyToken(token);
+    if (!user) {
+      throw new FrameVideosError(
+        ErrorCode.INVALID_TOKEN,
+        401,
+        'Invalid token'
+      );
+    }
+
+    const tenantId = user.tenantId;
+    const userId = user.id;
+
+    // Get all videos for user
+    const allVideos = db.getVideos(tenantId) || [];
+    const userVideos = allVideos.filter((v: any) => v.userId === userId);
+
+    // Calculate stats
+    const totalViews = userVideos.reduce((sum: number, v: any) => sum + (v.views || 0), 0);
+    const totalLikes = userVideos.reduce((sum: number, v: any) => sum + (v.likes || 0), 0);
+    const totalComments = userVideos.reduce((sum: number, v: any) => sum + (v.comments || 0), 0);
+    const avgEngagement =
+      userVideos.length > 0
+        ? (totalLikes + totalComments) / Math.max(totalViews, 1)
+        : 0;
+
+    // Get top videos
+    const topVideos = userVideos
+      .sort((a: any, b: any) => (b.views || 0) - (a.views || 0))
+      .slice(0, 5);
+
+    return c.json({
+      userId,
+      videoCount: userVideos.length,
+      totalViews,
+      totalLikes,
+      totalComments,
+      avgEngagement,
+      topVideos,
+    });
+  } catch (error: any) {
+    if (error instanceof FrameVideosError) {
+      return c.json(
+        {
+          error: error.code,
+          message: error.message,
+        },
+        error.statusCode
+      );
+    }
+
+    return c.json(
+      {
+        error: ErrorCode.INTERNAL_ERROR,
+        message: 'Failed to get dashboard',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * Get tenant's trending videos
+ * GET /api/v1/analytics/trending
+ */
+analytics.get('/trending', async (c) => {
+  try {
+    // Get tenant from token
+    const token = extractToken(c);
+    if (!token) {
+      throw new FrameVideosError(
+        ErrorCode.UNAUTHORIZED,
+        401,
+        'Missing authentication token'
+      );
+    }
+
+    const user = await verifyToken(token);
+    if (!user) {
+      throw new FrameVideosError(
+        ErrorCode.INVALID_TOKEN,
+        401,
+        'Invalid token'
+      );
+    }
+
+    const tenantId = user.tenantId;
+    const limit = Math.min(parseInt(c.req.query('limit') || '10'), 50);
+
+    // Get all videos
+    const allVideos = db.getVideos(tenantId) || [];
+
+    // Calculate trending score
+    const now = Date.now();
+    const trending = allVideos
+      .map((v: any) => {
+        const ageInDays =
+          (now - new Date(v.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+        const recencyScore = Math.max(0, 10 - ageInDays);
+        const score =
+          (v.views || 0) * 0.5 + (v.likes || 0) * 1.0 + recencyScore;
+
+        return { ...v, score };
+      })
+      .sort((a: any, b: any) => b.score - a.score)
+      .slice(0, limit);
+
+    return c.json({ videos: trending });
+  } catch (error: any) {
+    if (error instanceof FrameVideosError) {
+      return c.json(
+        {
+          error: error.code,
+          message: error.message,
+        },
+        error.statusCode
+      );
+    }
+
+    return c.json(
+      {
+        error: ErrorCode.INTERNAL_ERROR,
+        message: 'Failed to get trending',
+      },
+      500
+    );
+  }
+});
+
+export default analytics;

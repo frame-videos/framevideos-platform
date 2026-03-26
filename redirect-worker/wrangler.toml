@@ -1,0 +1,9 @@
+name = "frame-videos-redirect"
+type = "javascript"
+account_id = "54150e744dccd84f0ae67d6dcd485bf3"
+workers_dev = false
+
+[env.production]
+routes = [
+  { pattern = "*.pages.dev/*", custom_domain = true }
+]

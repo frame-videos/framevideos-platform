@@ -1,0 +1,30 @@
+name = "frame-videos-frontend"
+type = "javascript"
+account_id = "54150e744dccd84f0ae67d6dcd485bf3"
+workers_dev = true
+route = ""
+zone_id = ""
+
+[env.production]
+route = "production.frame-videos-frontend.pages.dev"
+zone_id = ""
+
+[[build.upload.rules]]
+type = "CompiledContentType"
+globs = ["**/*.wasm"]
+fallthrough = true
+
+[[build.upload.rules]]
+type = "Text"
+globs = ["**/*.json"]
+fallthrough = true
+
+[[build.upload.rules]]
+type = "CompiledContentType"
+globs = ["**/*.js"]
+fallthrough = true
+
+[[build.upload.rules]]
+type = "CompiledContentType"
+globs = ["**/*.mjs"]
+fallthrough = true

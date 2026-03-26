@@ -1,0 +1,26 @@
+{
+  "name": "framevideos",
+  "version": "1.0.0",
+  "description": "SaaS de edi\u00e7\u00e3o e compartilhamento de v\u00eddeos (padr\u00e3o Big Tech).",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frame-videos/framevideos-platform.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/frame-videos/framevideos-platform/issues"
+  },
+  "homepage": "https://github.com/framevideostech/framevideos-platform#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

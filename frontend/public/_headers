@@ -1,0 +1,13 @@
+# Block access to .pages.dev domains
+https://*.frame-videos-frontend.pages.dev/*
+  X-Robots-Tag: noindex
+  X-Frame-Options: DENY
+  
+https://production.frame-videos-frontend.pages.dev/*
+  X-Robots-Tag: noindex
+  X-Frame-Options: DENY
+
+# Allow access to custom domain
+https://framevideos.com/*
+  X-Robots-Tag: index, follow
+  X-Frame-Options: SAMEORIGIN
