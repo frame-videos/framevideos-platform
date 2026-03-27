@@ -88,11 +88,13 @@ upload.post('/', asyncHandler(async (c) => {
     const videoUrl = `https://pub-frame-videos.r2.dev/${key}`;
 
     // Create video record in database
-    const video: Video = {
+    const video: any = {
       id: videoId,
+      userId,
       tenantId,
       title: title.trim(),
       description: description.trim(),
+      status: 'active',
       url: videoUrl,
       thumbnailUrl: '',
       duration: 0,
@@ -100,7 +102,7 @@ upload.post('/', asyncHandler(async (c) => {
       createdAt: new Date().toISOString(),
     };
 
-    await withRetry(() => db.createVideo(video, tenantId));
+    await withRetry(() => db.createVideo(video));
 
     // Process tags if provided
     if (tags && tags.trim()) {
