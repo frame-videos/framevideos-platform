@@ -9,7 +9,13 @@ CREATE TABLE IF NOT EXISTS tenants (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   domain TEXT UNIQUE NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  custom_domain TEXT,
+  custom_domain_status TEXT DEFAULT 'none' CHECK(custom_domain_status IN ('none', 'pending', 'active', 'failed')),
+  custom_domain_cloudflare_id TEXT,
+  custom_domain_ssl_status TEXT,
+  custom_domain_verified_at TEXT,
+  custom_domain_created_at TEXT
 );
 
 -- ============================================================================
@@ -214,6 +220,9 @@ CREATE INDEX IF NOT EXISTS idx_videos_user ON videos(user_id);
 CREATE INDEX IF NOT EXISTS idx_videos_tenant ON videos(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status);
 CREATE INDEX IF NOT EXISTS idx_videos_created ON videos(created_at DESC);
+
+-- Tenants
+CREATE INDEX IF NOT EXISTS idx_tenants_custom_domain ON tenants(custom_domain);
 
 -- Categories
 CREATE INDEX IF NOT EXISTS idx_categories_tenant ON categories(tenant_id);

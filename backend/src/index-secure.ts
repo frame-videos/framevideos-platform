@@ -5,6 +5,7 @@ import auth from './routes/auth-secure';
 import videos from './routes/videos-secure';
 import videosUpload from './routes/videos-upload';
 import tenants from './routes/tenants';
+import customDomain from './routes/custom-domain';
 import storage from './routes/storage';
 import categories from './routes/categories';
 import tags from './routes/tags';
@@ -110,6 +111,7 @@ app.get('/api/v1', (c) => {
       videos: '/api/v1/videos',
       videosUpload: '/api/v1/videos/upload',
       tenants: '/api/v1/tenants',
+      customDomain: '/api/v1/tenants/:id/domain (admin only)',
       storage: '/api/v1/storage',
       categories: '/api/v1/categories',
       tags: '/api/v1/tags',
@@ -128,6 +130,7 @@ app.route('/api/v1/auth', auth);
 app.route('/api/v1/videos/upload', videosUpload);
 app.route('/api/v1/videos', videos);
 app.route('/api/v1/tenants', tenants);
+app.route('/api/v1/tenants', customDomain);
 app.route('/api/v1/storage', storage);
 app.route('/api/v1/categories', categories);
 app.route('/api/v1/tags', tags);

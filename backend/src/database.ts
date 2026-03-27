@@ -15,6 +15,12 @@ export interface Tenant {
   name: string;
   domain: string;
   createdAt: string;
+  customDomain?: string;
+  customDomainStatus?: 'none' | 'pending' | 'active' | 'failed';
+  customDomainCloudflareId?: string;
+  customDomainSslStatus?: string;
+  customDomainVerifiedAt?: string;
+  customDomainCreatedAt?: string;
 }
 
 export interface Video {

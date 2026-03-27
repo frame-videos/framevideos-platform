@@ -1,1 +1,1 @@
-This folder contains the built output assets for the worker "frame-videos" generated at 2026-03-27T11:00:16.206Z.
+This folder contains the built output assets for the worker "frame-videos" generated at 2026-03-27T11:36:18.132Z.

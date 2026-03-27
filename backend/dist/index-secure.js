@@ -4180,6 +4180,15 @@ var StorageError = class extends FrameVideosError {
     this.name = "StorageError";
   }
 };
+var ExternalAPIError = class extends FrameVideosError {
+  static {
+    __name(this, "ExternalAPIError");
+  }
+  constructor(message, details) {
+    super("EXTERNAL_API_ERROR" /* EXTERNAL_API_ERROR */, 502, message, details, "INTERNAL" /* INTERNAL */);
+    this.name = "ExternalAPIError";
+  }
+};
 function validateRequired(data, fields) {
   const missing = fields.filter((f) => !data[f]);
   if (missing.length > 0) {
@@ -4632,123 +4641,143 @@ __name(logSecurityEvent, "logSecurityEvent");
 
 // src/audit.ts
 var AuditEventType = /* @__PURE__ */ ((AuditEventType2) => {
-  AuditEventType2["LOGIN_SUCCESS"] = "LOGIN_SUCCESS";
-  AuditEventType2["LOGIN_FAILED"] = "LOGIN_FAILED";
-  AuditEventType2["LOGOUT"] = "LOGOUT";
-  AuditEventType2["REGISTER_SUCCESS"] = "REGISTER_SUCCESS";
-  AuditEventType2["REGISTER_FAILED"] = "REGISTER_FAILED";
-  AuditEventType2["VIDEO_UPLOAD"] = "VIDEO_UPLOAD";
-  AuditEventType2["VIDEO_UPDATE"] = "VIDEO_UPDATE";
-  AuditEventType2["VIDEO_DELETE"] = "VIDEO_DELETE";
-  AuditEventType2["VIDEO_VIEW"] = "VIDEO_VIEW";
-  AuditEventType2["TENANT_CREATE"] = "TENANT_CREATE";
-  AuditEventType2["TENANT_UPDATE"] = "TENANT_UPDATE";
-  AuditEventType2["TENANT_DELETE"] = "TENANT_DELETE";
-  AuditEventType2["USER_ROLE_CHANGE"] = "USER_ROLE_CHANGE";
-  AuditEventType2["USER_DELETE"] = "USER_DELETE";
-  AuditEventType2["USER_BAN"] = "USER_BAN";
-  AuditEventType2["USER_UNBAN"] = "USER_UNBAN";
-  AuditEventType2["ACCOUNT_LOCKED"] = "ACCOUNT_LOCKED";
-  AuditEventType2["ACCOUNT_UNLOCKED"] = "ACCOUNT_UNLOCKED";
-  AuditEventType2["IP_BLOCKED"] = "IP_BLOCKED";
-  AuditEventType2["RATE_LIMIT_EXCEEDED"] = "RATE_LIMIT_EXCEEDED";
-  AuditEventType2["ADMIN_ACTION"] = "ADMIN_ACTION";
-  AuditEventType2["CONFIG_CHANGE"] = "CONFIG_CHANGE";
+  AuditEventType2["LOGIN_SUCCESS"] = "login_success";
+  AuditEventType2["LOGIN_FAILED"] = "login_failed";
+  AuditEventType2["REGISTER_SUCCESS"] = "register_success";
+  AuditEventType2["REGISTER_FAILED"] = "register_failed";
+  AuditEventType2["VIDEO_UPLOAD"] = "video_upload";
+  AuditEventType2["VIDEO_DELETE"] = "video_delete";
+  AuditEventType2["VIDEO_UPDATE"] = "video_update";
+  AuditEventType2["TENANT_CREATE"] = "tenant_create";
+  AuditEventType2["TENANT_UPDATE"] = "tenant_update";
+  AuditEventType2["TENANT_DELETE"] = "tenant_delete";
+  AuditEventType2["USER_CREATE"] = "user_create";
+  AuditEventType2["USER_UPDATE"] = "user_update";
+  AuditEventType2["USER_DELETE"] = "user_delete";
   return AuditEventType2;
 })(AuditEventType || {});
-async function logAuditEvent(db, event) {
+async function logAuditEvent(db, data) {
   try {
-    const id = crypto.randomUUID();
-    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const timestamp = (/* @__PURE__ */ new Date()).toISOString();
     await db.prepare(`
-        INSERT INTO security_audit_log (id, event_type, ip_address, email, user_id, details, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO security_events (
+          event_type, user_id, tenant_id, resource_type, resource_id,
+          details, ip_address, user_agent, timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
-      id,
-      event.eventType,
-      event.ipAddress || null,
-      null,
-      // email não está no novo schema, mas mantém compatibilidade
-      event.userId || null,
-      JSON.stringify({
-        tenantId: event.tenantId,
-        resourceType: event.resourceType,
-        resourceId: event.resourceId,
-        userAgent: event.userAgent,
-        ...event.details
-      }),
-      now
+      data.eventType,
+      data.userId || null,
+      data.tenantId || null,
+      data.resourceType || null,
+      data.resourceId || null,
+      data.details ? JSON.stringify(data.details) : null,
+      data.ipAddress || null,
+      data.userAgent || null,
+      timestamp
     ).run();
-    console.log(`[AUDIT] ${event.eventType}`, {
-      timestamp: now,
-      userId: event.userId,
-      tenantId: event.tenantId,
-      resource: event.resourceType ? `${event.resourceType}:${event.resourceId}` : void 0,
-      ip: event.ipAddress,
-      details: event.details
-    });
   } catch (error) {
-    console.error("[AUDIT_ERROR] Failed to log event:", error);
+    console.error("Erro ao logar evento de auditoria:", error);
   }
 }
 __name(logAuditEvent, "logAuditEvent");
 async function queryAuditLogs(db, filters) {
-  let query = "SELECT * FROM security_audit_log WHERE 1=1";
-  const params = [];
-  if (filters.eventType) {
-    query += " AND event_type = ?";
-    params.push(filters.eventType);
+  try {
+    let query = "SELECT * FROM security_events WHERE 1=1";
+    const params = [];
+    if (filters.eventType) {
+      query += " AND event_type = ?";
+      params.push(filters.eventType);
+    }
+    if (filters.userId) {
+      query += " AND user_id = ?";
+      params.push(filters.userId);
+    }
+    if (filters.tenantId) {
+      query += " AND tenant_id = ?";
+      params.push(filters.tenantId);
+    }
+    if (filters.startDate) {
+      query += " AND timestamp >= ?";
+      params.push(filters.startDate);
+    }
+    if (filters.endDate) {
+      query += " AND timestamp <= ?";
+      params.push(filters.endDate);
+    }
+    query += " ORDER BY timestamp DESC";
+    if (filters.limit) {
+      query += " LIMIT ?";
+      params.push(filters.limit);
+    }
+    if (filters.offset) {
+      query += " OFFSET ?";
+      params.push(filters.offset);
+    }
+    const result = await db.prepare(query).bind(...params).all();
+    return result.results || [];
+  } catch (error) {
+    console.error("Erro ao consultar logs de auditoria:", error);
+    return [];
   }
-  if (filters.userId) {
-    query += " AND user_id = ?";
-    params.push(filters.userId);
-  }
-  if (filters.tenantId) {
-    query += " AND details LIKE ?";
-    params.push(`%"tenantId":"${filters.tenantId}"%`);
-  }
-  if (filters.startDate) {
-    query += " AND created_at >= ?";
-    params.push(filters.startDate);
-  }
-  if (filters.endDate) {
-    query += " AND created_at <= ?";
-    params.push(filters.endDate);
-  }
-  query += " ORDER BY created_at DESC";
-  if (filters.limit) {
-    query += " LIMIT ?";
-    params.push(filters.limit);
-  }
-  if (filters.offset) {
-    query += " OFFSET ?";
-    params.push(filters.offset);
-  }
-  const result = await db.prepare(query).bind(...params).all();
-  return result.results.map((row) => ({
-    ...row,
-    details: row.details ? JSON.parse(row.details) : null
-  }));
 }
 __name(queryAuditLogs, "queryAuditLogs");
 async function getAuditStats(db, filters) {
-  let query = "SELECT event_type, COUNT(*) as count FROM security_audit_log WHERE 1=1";
-  const params = [];
-  if (filters.startDate) {
-    query += " AND created_at >= ?";
-    params.push(filters.startDate);
+  try {
+    let whereClause = "WHERE 1=1";
+    const params = [];
+    if (filters.startDate) {
+      whereClause += " AND timestamp >= ?";
+      params.push(filters.startDate);
+    }
+    if (filters.endDate) {
+      whereClause += " AND timestamp <= ?";
+      params.push(filters.endDate);
+    }
+    const totalQuery = `SELECT COUNT(*) as total FROM security_events ${whereClause}`;
+    const totalResult = await db.prepare(totalQuery).bind(...params).first();
+    const byTypeQuery = `
+      SELECT event_type, COUNT(*) as count
+      FROM security_events
+      ${whereClause}
+      GROUP BY event_type
+      ORDER BY count DESC
+    `;
+    const byTypeResult = await db.prepare(byTypeQuery).bind(...params).all();
+    const byUserQuery = `
+      SELECT user_id, COUNT(*) as count
+      FROM security_events
+      ${whereClause}
+      AND user_id IS NOT NULL
+      GROUP BY user_id
+      ORDER BY count DESC
+      LIMIT 10
+    `;
+    const byUserResult = await db.prepare(byUserQuery).bind(...params).all();
+    const byTenantQuery = `
+      SELECT tenant_id, COUNT(*) as count
+      FROM security_events
+      ${whereClause}
+      AND tenant_id IS NOT NULL
+      GROUP BY tenant_id
+      ORDER BY count DESC
+      LIMIT 10
+    `;
+    const byTenantResult = await db.prepare(byTenantQuery).bind(...params).all();
+    return {
+      total: totalResult?.total || 0,
+      byType: byTypeResult.results || [],
+      byUser: byUserResult.results || [],
+      byTenant: byTenantResult.results || []
+    };
+  } catch (error) {
+    console.error("Erro ao obter estat\xEDsticas de auditoria:", error);
+    return {
+      total: 0,
+      byType: [],
+      byUser: [],
+      byTenant: []
+    };
   }
-  if (filters.endDate) {
-    query += " AND created_at <= ?";
-    params.push(filters.endDate);
-  }
-  query += " GROUP BY event_type";
-  const result = await db.prepare(query).bind(...params).all();
-  const stats = {};
-  for (const row of result.results) {
-    stats[row.event_type] = row.count;
-  }
-  return stats;
 }
 __name(getAuditStats, "getAuditStats");
 
@@ -4790,7 +4819,7 @@ var KVRateLimiter = class {
       };
     }
     count++;
-    const ttl = Math.ceil((resetAt - now) / 1e3);
+    const ttl = Math.max(60, Math.ceil((resetAt - now) / 1e3));
     await this.kv.put(
       kvKey,
       JSON.stringify({ count, resetAt }),
@@ -5011,7 +5040,7 @@ auth.post("/register", registerRateLimit, asyncHandler(async (c) => {
     details: { tenantId: user.tenantId }
   });
   await logAuditEvent(rawDB, {
-    eventType: "REGISTER_SUCCESS" /* REGISTER_SUCCESS */,
+    eventType: "register_success" /* REGISTER_SUCCESS */,
     userId: user.id,
     tenantId: user.tenantId,
     ipAddress: clientIP,
@@ -5132,7 +5161,7 @@ auth.post("/login", loginRateLimit, asyncHandler(async (c) => {
       }
     });
     await logAuditEvent(rawDB, {
-      eventType: "LOGIN_FAILED" /* LOGIN_FAILED */,
+      eventType: "login_failed" /* LOGIN_FAILED */,
       userId: user.id,
       tenantId: user.tenantId,
       ipAddress: clientIP,
@@ -5176,7 +5205,7 @@ auth.post("/login", loginRateLimit, asyncHandler(async (c) => {
     details: { tenantId: user.tenantId }
   });
   await logAuditEvent(rawDB, {
-    eventType: "LOGIN_SUCCESS" /* LOGIN_SUCCESS */,
+    eventType: "login_success" /* LOGIN_SUCCESS */,
     userId: user.id,
     tenantId: user.tenantId,
     ipAddress: clientIP,
@@ -5694,7 +5723,7 @@ videos.delete("/:id", asyncHandler(async (c) => {
     userId
   });
   await logAuditEvent(rawDB, {
-    eventType: "VIDEO_DELETE" /* VIDEO_DELETE */,
+    eventType: "video_delete" /* VIDEO_DELETE */,
     userId,
     tenantId,
     resourceType: "video",
@@ -5889,7 +5918,7 @@ upload.post("/", asyncHandler(async (c) => {
       title
     });
     await logAuditEvent(rawDB, {
-      eventType: "VIDEO_UPLOAD" /* VIDEO_UPLOAD */,
+      eventType: "video_upload" /* VIDEO_UPLOAD */,
       userId,
       tenantId,
       resourceType: "video",
@@ -6012,6 +6041,24 @@ async function authenticate(c, next) {
   await next();
 }
 __name(authenticate, "authenticate");
+async function requireAdmin(c, next) {
+  const user = c.get("user");
+  if (!user) {
+    throw new AuthenticationError("Authentication required");
+  }
+  const allowedRoles = ["admin", "super_admin"];
+  if (!allowedRoles.includes(user.role)) {
+    throw new AuthorizationError(
+      "Admin access required",
+      {
+        requiredRole: "admin or super_admin",
+        userRole: user.role
+      }
+    );
+  }
+  await next();
+}
+__name(requireAdmin, "requireAdmin");
 async function requireSuperAdmin(c, next) {
   const user = c.get("user");
   if (!user) {
@@ -6059,7 +6106,7 @@ tenants.post("/", asyncHandler(async (c) => {
     domain: tenant.domain
   });
   await logAuditEvent(rawDB, {
-    eventType: "TENANT_CREATE" /* TENANT_CREATE */,
+    eventType: "tenant_create" /* TENANT_CREATE */,
     userId: user?.id,
     tenantId: tenant.id,
     resourceType: "tenant",
@@ -6096,6 +6143,380 @@ tenants.get("/:id", asyncHandler(async (c) => {
   return c.json(tenant);
 }));
 var tenants_default = tenants;
+
+// src/cloudflare-saas.ts
+var CloudflareSaaSClient = class {
+  static {
+    __name(this, "CloudflareSaaSClient");
+  }
+  config;
+  baseUrl = "https://api.cloudflare.com/client/v4";
+  constructor(config) {
+    this.config = config;
+  }
+  /**
+   * Add a custom hostname to Cloudflare for SaaS
+   */
+  async addCustomHostname(hostname) {
+    const request = {
+      hostname,
+      ssl: {
+        method: "http",
+        type: "dv",
+        settings: {
+          http2: "on",
+          min_tls_version: "1.2",
+          tls_1_3: "on"
+        }
+      }
+    };
+    const response = await fetch(
+      `${this.baseUrl}/zones/${this.config.zoneId}/custom_hostnames`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.config.apiToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(request)
+      }
+    );
+    const data = await response.json();
+    if (!data.success) {
+      const error = data;
+      throw new Error(`Cloudflare API error: ${error.errors.map((e) => e.message).join(", ")}`);
+    }
+    return data.result;
+  }
+  /**
+   * Get custom hostname status
+   */
+  async getCustomHostname(hostnameId) {
+    const response = await fetch(
+      `${this.baseUrl}/zones/${this.config.zoneId}/custom_hostnames/${hostnameId}`,
+      {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${this.config.apiToken}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    const data = await response.json();
+    if (!data.success) {
+      const error = data;
+      throw new Error(`Cloudflare API error: ${error.errors.map((e) => e.message).join(", ")}`);
+    }
+    return data.result;
+  }
+  /**
+   * Delete a custom hostname
+   */
+  async deleteCustomHostname(hostnameId) {
+    const response = await fetch(
+      `${this.baseUrl}/zones/${this.config.zoneId}/custom_hostnames/${hostnameId}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${this.config.apiToken}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    const data = await response.json();
+    if (!data.success) {
+      const error = data;
+      throw new Error(`Cloudflare API error: ${error.errors.map((e) => e.message).join(", ")}`);
+    }
+  }
+  /**
+   * Validate domain format
+   */
+  static validateDomain(domain) {
+    const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/i;
+    const blocked = ["localhost", "127.0.0.1", "0.0.0.0"];
+    if (blocked.includes(domain.toLowerCase())) {
+      return false;
+    }
+    const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (ipRegex.test(domain)) {
+      return false;
+    }
+    return domainRegex.test(domain);
+  }
+  /**
+   * Format validation instructions for the tenant
+   */
+  static formatValidationInstructions(hostname, fallbackOrigin) {
+    return {
+      type: "CNAME",
+      name: hostname.hostname,
+      value: fallbackOrigin,
+      instructions: [
+        `1. Go to your DNS provider (e.g., GoDaddy, Namecheap, Cloudflare)`,
+        `2. Add a CNAME record:`,
+        `   - Type: CNAME`,
+        `   - Name: ${hostname.hostname.split(".")[0]} (or @ for root domain)`,
+        `   - Value: ${fallbackOrigin}`,
+        `   - TTL: Auto or 3600`,
+        `3. Wait for DNS propagation (usually 5-30 minutes)`,
+        `4. SSL certificate will be issued automatically by Cloudflare`
+      ].join("\n")
+    };
+  }
+};
+function mapCloudflareStatus(hostnameStatus, sslStatus) {
+  if (hostnameStatus === "active" && sslStatus === "active") {
+    return "active";
+  }
+  if (hostnameStatus === "deleted" || sslStatus === "deleted") {
+    return "failed";
+  }
+  return "pending";
+}
+__name(mapCloudflareStatus, "mapCloudflareStatus");
+
+// src/routes/custom-domain.ts
+var customDomain = new Hono2();
+customDomain.use("*", authenticate, requireAdmin);
+function getCloudflareClient(c) {
+  const zoneId = c.env.CLOUDFLARE_ZONE_ID;
+  const apiToken = c.env.CLOUDFLARE_API_TOKEN;
+  if (!zoneId || !apiToken) {
+    throw new Error("Cloudflare configuration missing. Set CLOUDFLARE_ZONE_ID and CLOUDFLARE_API_TOKEN.");
+  }
+  const config = {
+    zoneId,
+    apiToken
+  };
+  return new CloudflareSaaSClient(config);
+}
+__name(getCloudflareClient, "getCloudflareClient");
+function getFallbackOrigin(c) {
+  return c.env.FALLBACK_ORIGIN || "framevideos.com";
+}
+__name(getFallbackOrigin, "getFallbackOrigin");
+customDomain.post("/:id/domain", asyncHandler(async (c) => {
+  const tenantId = c.req.param("id");
+  const body = await c.req.json();
+  const { customDomain: domain } = body;
+  const db = c.get("db");
+  const { ipAddress, userAgent } = getAuditContext(c);
+  const user = c.get("user");
+  const rawDB = c.env.DB;
+  validateUUID(tenantId, "tenantId");
+  validateRequired(body, ["customDomain"]);
+  if (!CloudflareSaaSClient.validateDomain(domain)) {
+    throw new ValidationError("Invalid domain format", {
+      domain,
+      hint: "Domain must be a valid FQDN (e.g., videos.example.com)"
+    });
+  }
+  const tenant = await withRetry(() => db.getTenantById(tenantId));
+  if (!tenant) {
+    throw new NotFoundError("Tenant", { tenantId });
+  }
+  if (tenant.customDomain) {
+    throw new ConflictError("Tenant already has a custom domain", {
+      existingDomain: tenant.customDomain,
+      hint: "Delete the existing custom domain first"
+    });
+  }
+  const existingTenant = await rawDB.prepare(
+    "SELECT id, name FROM tenants WHERE custom_domain = ? AND id != ?"
+  ).bind(domain, tenantId).first();
+  if (existingTenant) {
+    throw new ConflictError("Domain already in use by another tenant", {
+      domain,
+      tenantId: existingTenant.id
+    });
+  }
+  const cfClient = getCloudflareClient(c);
+  let cfHostname;
+  try {
+    cfHostname = await cfClient.addCustomHostname(domain);
+  } catch (error) {
+    throw new ExternalAPIError("Failed to add custom hostname to Cloudflare", {
+      error: error.message,
+      hint: "Check domain format and Cloudflare configuration"
+    });
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await rawDB.prepare(`
+    UPDATE tenants 
+    SET 
+      custom_domain = ?,
+      custom_domain_status = ?,
+      custom_domain_cloudflare_id = ?,
+      custom_domain_ssl_status = ?,
+      custom_domain_created_at = ?
+    WHERE id = ?
+  `).bind(
+    domain,
+    "pending",
+    cfHostname.id,
+    cfHostname.ssl.status,
+    now,
+    tenantId
+  ).run();
+  await logAuditEvent(rawDB, {
+    eventType: "tenant_update" /* TENANT_UPDATE */,
+    userId: user?.id,
+    tenantId,
+    resourceType: "custom_domain",
+    resourceId: cfHostname.id,
+    ipAddress,
+    userAgent,
+    details: {
+      action: "add_custom_domain",
+      domain,
+      cloudflareId: cfHostname.id
+    }
+  });
+  const fallbackOrigin = getFallbackOrigin(c);
+  const validation = CloudflareSaaSClient.formatValidationInstructions(
+    cfHostname,
+    fallbackOrigin
+  );
+  return c.json({
+    message: "Custom domain added successfully",
+    domain,
+    status: "pending",
+    validation: {
+      type: validation.type,
+      name: validation.name,
+      value: validation.value
+    },
+    instructions: validation.instructions,
+    ssl: {
+      status: cfHostname.ssl.status,
+      method: cfHostname.ssl.method
+    },
+    cloudflareId: cfHostname.id
+  }, 201);
+}));
+customDomain.get("/:id/domain", asyncHandler(async (c) => {
+  const tenantId = c.req.param("id");
+  const db = c.get("db");
+  const rawDB = c.env.DB;
+  validateUUID(tenantId, "tenantId");
+  const tenant = await withRetry(() => db.getTenantById(tenantId));
+  if (!tenant) {
+    throw new NotFoundError("Tenant", { tenantId });
+  }
+  if (!tenant.customDomain || !tenant.customDomainCloudflareId) {
+    return c.json({
+      message: "No custom domain configured",
+      status: "none"
+    });
+  }
+  const cfClient = getCloudflareClient(c);
+  let cfHostname;
+  try {
+    cfHostname = await cfClient.getCustomHostname(tenant.customDomainCloudflareId);
+  } catch (error) {
+    throw new ExternalAPIError("Failed to get custom hostname status from Cloudflare", {
+      error: error.message
+    });
+  }
+  const status = mapCloudflareStatus(cfHostname.status, cfHostname.ssl.status);
+  if (status !== tenant.customDomainStatus || cfHostname.ssl.status !== tenant.customDomainSslStatus) {
+    const updates = [];
+    const bindings = [];
+    updates.push("custom_domain_status = ?");
+    bindings.push(status);
+    updates.push("custom_domain_ssl_status = ?");
+    bindings.push(cfHostname.ssl.status);
+    if (status === "active" && tenant.customDomainStatus !== "active") {
+      updates.push("custom_domain_verified_at = ?");
+      bindings.push((/* @__PURE__ */ new Date()).toISOString());
+    }
+    bindings.push(tenantId);
+    await rawDB.prepare(`
+      UPDATE tenants 
+      SET ${updates.join(", ")}
+      WHERE id = ?
+    `).bind(...bindings).run();
+  }
+  return c.json({
+    domain: tenant.customDomain,
+    status,
+    ssl: {
+      status: cfHostname.ssl.status,
+      method: cfHostname.ssl.method,
+      certificate_authority: cfHostname.ssl.certificate_authority,
+      validation_errors: cfHostname.ssl.validation_errors
+    },
+    verification: {
+      verified: status === "active",
+      verified_at: tenant.customDomainVerifiedAt,
+      errors: cfHostname.verification_errors
+    },
+    cloudflare: {
+      id: cfHostname.id,
+      hostname_status: cfHostname.status,
+      created_at: cfHostname.created_at
+    }
+  });
+}));
+customDomain.delete("/:id/domain", asyncHandler(async (c) => {
+  const tenantId = c.req.param("id");
+  const db = c.get("db");
+  const { ipAddress, userAgent } = getAuditContext(c);
+  const user = c.get("user");
+  const rawDB = c.env.DB;
+  validateUUID(tenantId, "tenantId");
+  const tenant = await withRetry(() => db.getTenantById(tenantId));
+  if (!tenant) {
+    throw new NotFoundError("Tenant", { tenantId });
+  }
+  if (!tenant.customDomain || !tenant.customDomainCloudflareId) {
+    throw new NotFoundError("Custom domain", { tenantId });
+  }
+  const domainToDelete = tenant.customDomain;
+  const cloudflareId = tenant.customDomainCloudflareId;
+  const cfClient = getCloudflareClient(c);
+  try {
+    await cfClient.deleteCustomHostname(cloudflareId);
+  } catch (error) {
+    console.error("[CLOUDFLARE_DELETE_ERROR]", {
+      tenantId,
+      domain: domainToDelete,
+      cloudflareId,
+      error: error.message
+    });
+  }
+  await rawDB.prepare(`
+    UPDATE tenants 
+    SET 
+      custom_domain = NULL,
+      custom_domain_status = 'none',
+      custom_domain_cloudflare_id = NULL,
+      custom_domain_ssl_status = NULL,
+      custom_domain_verified_at = NULL,
+      custom_domain_created_at = NULL
+    WHERE id = ?
+  `).bind(tenantId).run();
+  await logAuditEvent(rawDB, {
+    eventType: "tenant_update" /* TENANT_UPDATE */,
+    userId: user?.id,
+    tenantId,
+    resourceType: "custom_domain",
+    resourceId: cloudflareId,
+    ipAddress,
+    userAgent,
+    details: {
+      action: "remove_custom_domain",
+      domain: domainToDelete,
+      cloudflareId
+    }
+  });
+  return c.json({
+    message: "Custom domain removed successfully",
+    domain: domainToDelete
+  });
+}));
+var custom_domain_default = customDomain;
 
 // src/storage-mock.ts
 var MockStorageService = class {
@@ -6961,20 +7382,7 @@ var tags_default = tags;
 
 // src/routes/analytics.ts
 var analytics = new Hono2();
-async function authenticate5(c, next) {
-  const token = extractToken(c.req.header("Authorization"));
-  if (!token) {
-    throw new AuthenticationError("Authentication required");
-  }
-  const payload = await verifyToken(token);
-  if (!payload) {
-    throw new AuthenticationError("Invalid or expired token");
-  }
-  c.set("user", payload);
-  await next();
-}
-__name(authenticate5, "authenticate");
-analytics.get("/videos/:id", authenticate5, asyncHandler(async (c) => {
+analytics.get("/videos/:id", authenticate, asyncHandler(async (c) => {
   const videoId = c.req.param("id");
   const user = c.get("user");
   const db = c.get("db");
@@ -7025,7 +7433,7 @@ analytics.post("/videos/:id/view", asyncHandler(async (c) => {
     views: updatedVideo.views
   });
 }));
-analytics.post("/videos/:id/like", authenticate5, asyncHandler(async (c) => {
+analytics.post("/videos/:id/like", authenticate, asyncHandler(async (c) => {
   const videoId = c.req.param("id");
   const user = c.get("user");
   const db = c.get("db");
@@ -7060,7 +7468,7 @@ analytics.post("/videos/:id/like", authenticate5, asyncHandler(async (c) => {
     liked
   });
 }));
-analytics.post("/videos/:id/comment", authenticate5, asyncHandler(async (c) => {
+analytics.post("/videos/:id/comment", authenticate, asyncHandler(async (c) => {
   const videoId = c.req.param("id");
   const user = c.get("user");
   const db = c.get("db");
@@ -7121,7 +7529,7 @@ analytics.post("/videos/:id/share", asyncHandler(async (c) => {
     platform
   });
 }));
-analytics.get("/dashboard", authenticate5, asyncHandler(async (c) => {
+analytics.get("/dashboard", authenticate, requireAdmin, asyncHandler(async (c) => {
   const user = c.get("user");
   const db = c.get("db");
   const videos2 = await withRetry(
@@ -7183,7 +7591,7 @@ analytics.get("/trending", asyncHandler(async (c) => {
     total: trending.length
   });
 }));
-analytics.get("/videos/:id/metrics", authenticate5, asyncHandler(async (c) => {
+analytics.get("/videos/:id/metrics", authenticate, asyncHandler(async (c) => {
   const videoId = c.req.param("id");
   const user = c.get("user");
   const db = c.get("db");
@@ -7292,128 +7700,66 @@ var audit_default = audit;
 
 // src/routes/gdpr.ts
 var gdpr = new Hono2();
-async function authenticateUser(c) {
-  const token = extractToken(c);
+async function authenticate5(c, next) {
+  const token = extractToken(c.req.header("Authorization"));
   if (!token) {
-    throw new AuthenticationError("No token provided");
+    throw new AuthenticationError("Authentication required");
   }
-  const decoded = await verifyToken(token);
-  if (!decoded || !decoded.userId) {
-    throw new AuthenticationError("Invalid token");
+  const payload = await verifyToken(token);
+  if (!payload) {
+    throw new AuthenticationError("Invalid or expired token");
   }
-  const db = c.get("db");
-  const user = await db.getUserById(decoded.userId);
-  if (!user) {
-    throw new NotFoundError("User not found");
-  }
-  if (user.deletedAt) {
-    throw new AuthenticationError("User account has been deleted");
-  }
-  return user;
+  c.set("user", payload);
+  await next();
 }
-__name(authenticateUser, "authenticateUser");
-gdpr.get("/users/me/data", asyncHandler(async (c) => {
-  const user = await authenticateUser(c);
+__name(authenticate5, "authenticate");
+gdpr.get("/users/me/data", authenticate5, asyncHandler(async (c) => {
+  const user = c.get("user");
   const db = c.get("db");
-  const rawDB = c.env.DB;
-  const userData = {
+  const userData = await withRetry(() => db.getUserById(user.sub));
+  if (!userData) {
+    return c.json({ error: "User not found" }, 404);
+  }
+  const videos2 = await withRetry(() => db.getVideosByUser(user.sub));
+  const tenant = await withRetry(() => db.getTenantById(userData.tenantId));
+  const exportData = {
     user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      tenantId: user.tenantId,
-      createdAt: user.createdAt,
-      privacyPolicyAcceptedAt: user.privacyPolicyAcceptedAt || null,
-      termsAcceptedAt: user.termsAcceptedAt || null
+      id: userData.id,
+      email: userData.email,
+      name: userData.name,
+      role: userData.role,
+      createdAt: userData.createdAt,
+      privacyPolicyAcceptedAt: userData.privacyPolicyAcceptedAt,
+      termsAcceptedAt: userData.termsAcceptedAt
     },
-    videos: [],
-    analytics: [],
-    favorites: [],
-    comments: []
-  };
-  try {
-    const videos2 = await rawDB.prepare("SELECT id, title, description, status, duration, url, thumbnail_url, created_at, updated_at FROM videos WHERE user_id = ? AND tenant_id = ?").bind(user.id, user.tenantId).all();
-    userData.videos = videos2.results || [];
-  } catch (error) {
-    console.error("Error fetching videos:", error);
-  }
-  try {
-    const analytics2 = await rawDB.prepare("SELECT id, video_id, event_type, metadata, created_at FROM analytics WHERE user_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 1000").bind(user.id, user.tenantId).all();
-    userData.analytics = analytics2.results || [];
-  } catch (error) {
-    console.error("Error fetching analytics:", error);
-  }
-  try {
-    const favorites = await rawDB.prepare("SELECT video_id, created_at FROM favorites WHERE user_id = ?").bind(user.id).all();
-    userData.favorites = favorites.results || [];
-  } catch (error) {
-  }
-  try {
-    const comments = await rawDB.prepare("SELECT id, video_id, content, created_at FROM comments WHERE user_id = ?").bind(user.id).all();
-    userData.comments = comments.results || [];
-  } catch (error) {
-  }
-  return c.json({
-    success: true,
-    data: userData,
+    tenant: tenant ? {
+      id: tenant.id,
+      name: tenant.name,
+      domain: tenant.domain,
+      createdAt: tenant.createdAt
+    } : null,
+    videos: videos2.map((v) => ({
+      id: v.id,
+      title: v.title,
+      description: v.description,
+      url: v.url,
+      views: v.views,
+      createdAt: v.createdAt
+    })),
     exportedAt: (/* @__PURE__ */ new Date()).toISOString()
-  });
+  };
+  return c.json(exportData);
 }));
-gdpr.delete("/users/me/delete", asyncHandler(async (c) => {
-  const user = await authenticateUser(c);
-  const rawDB = c.env.DB;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  await rawDB.prepare(`
-      UPDATE users 
-      SET 
-        deleted_at = ?,
-        email = ?,
-        name = ?,
-        password = ?
-      WHERE id = ? AND tenant_id = ?
-    `).bind(
-    now,
-    `deleted_${user.id}@anonymized.local`,
-    "Deleted User",
-    "DELETED",
-    user.id,
-    user.tenantId
-  ).run();
-  await rawDB.prepare(`
-      UPDATE videos 
-      SET 
-        title = 'Deleted Video',
-        description = 'This video has been deleted by the user'
-      WHERE user_id = ? AND tenant_id = ?
-    `).bind(user.id, user.tenantId).run();
-  await rawDB.prepare("DELETE FROM analytics WHERE user_id = ? AND tenant_id = ?").bind(user.id, user.tenantId).run();
-  try {
-    await rawDB.prepare("DELETE FROM favorites WHERE user_id = ?").bind(user.id).run();
-  } catch (error) {
-  }
-  try {
-    await rawDB.prepare(`
-        UPDATE comments 
-        SET content = '[deleted]', user_id = NULL 
-        WHERE user_id = ?
-      `).bind(user.id).run();
-  } catch (error) {
-  }
-  try {
-    await rawDB.prepare("DELETE FROM login_attempts WHERE email = ?").bind(user.email).run();
-  } catch (error) {
-  }
-  try {
-    await rawDB.prepare("DELETE FROM account_lockouts WHERE user_id = ?").bind(user.id).run();
-  } catch (error) {
-  }
+gdpr.delete("/users/me/delete", authenticate5, asyncHandler(async (c) => {
+  const user = c.get("user");
+  const db = c.get("db");
+  await withRetry(() => db.softDeleteUser(user.sub));
   return c.json({
-    success: true,
-    message: "Your account has been deleted and your personal data has been anonymized",
-    deletedAt: now
+    message: "Your account has been deleted. All personal data will be anonymized within 30 days.",
+    deletedAt: (/* @__PURE__ */ new Date()).toISOString()
   });
 }));
+var gdpr_default = gdpr;
 
 // src/database-d1.ts
 var D1Database = class {
@@ -7508,6 +7854,10 @@ var D1Database = class {
   async getUsersByTenant(tenantId) {
     const result = await this.db.prepare("SELECT * FROM users WHERE tenant_id = ?").bind(tenantId).all();
     return result.results;
+  }
+  async softDeleteUser(userId) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    await this.db.prepare("UPDATE users SET deleted_at = ? WHERE id = ?").bind(now, userId).run();
   }
   // ============================================================================
   // Videos
@@ -7813,6 +8163,68 @@ var D1Database = class {
       `).bind(tenantId, limit).all();
     return result.results;
   }
+  // ============================================================================
+  // GDPR Compliance
+  // ============================================================================
+  /**
+   * Get complete user data export (GDPR Right to Data Portability)
+   */
+  async getUserData(userId) {
+    const user = await this.getUserById(userId);
+    if (!user) return null;
+    const videos2 = await this.getVideosByUser(userId);
+    const analyticsResult = await this.db.prepare("SELECT * FROM analytics WHERE user_id = ? ORDER BY created_at DESC").bind(userId).all();
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tenantId: user.tenantId,
+        createdAt: user.createdAt,
+        privacyPolicyAcceptedAt: user.privacyPolicyAcceptedAt,
+        termsAcceptedAt: user.termsAcceptedAt
+      },
+      videos: videos2.map((v) => ({
+        id: v.id,
+        title: v.title,
+        description: v.description,
+        status: v.status,
+        duration: v.duration,
+        url: v.url,
+        thumbnailUrl: v.thumbnail_url,
+        createdAt: v.created_at,
+        updatedAt: v.updated_at
+      })),
+      analytics: analyticsResult.results
+    };
+  }
+  /**
+   * Soft delete user + anonymize data (GDPR Right to be Forgotten)
+   */
+  async softDeleteUser(userId) {
+    const user = await this.getUserById(userId);
+    if (!user || user.deletedAt) return null;
+    const deletedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const anonymizedEmail = `deleted-${userId}@anonymized.local`;
+    await this.db.prepare(`
+        UPDATE users 
+        SET 
+          deleted_at = ?,
+          email = ?,
+          name = ?,
+          password = ?
+        WHERE id = ?
+      `).bind(deletedAt, anonymizedEmail, "Deleted User", "", userId).run();
+    await this.db.prepare(`
+        UPDATE videos 
+        SET 
+          title = 'Deleted Video',
+          description = 'This video has been deleted by the user'
+        WHERE user_id = ?
+      `).bind(userId).run();
+    return { deleted_at: deletedAt };
+  }
 };
 
 // src/middleware/security-headers.ts
@@ -7884,6 +8296,7 @@ app.get("/api/v1", (c) => {
       videos: "/api/v1/videos",
       videosUpload: "/api/v1/videos/upload",
       tenants: "/api/v1/tenants",
+      customDomain: "/api/v1/tenants/:id/domain (admin only)",
       storage: "/api/v1/storage",
       categories: "/api/v1/categories",
       tags: "/api/v1/tags",
@@ -7897,12 +8310,13 @@ app.route("/api/v1/auth", auth_secure_default);
 app.route("/api/v1/videos/upload", videos_upload_default);
 app.route("/api/v1/videos", videos_secure_default);
 app.route("/api/v1/tenants", tenants_default);
+app.route("/api/v1/tenants", custom_domain_default);
 app.route("/api/v1/storage", storage_default);
 app.route("/api/v1/categories", categories_default);
 app.route("/api/v1/tags", tags_default);
 app.route("/api/v1/analytics", analytics_default);
 app.route("/api/v1/audit", audit_default);
-app.route("/api/v1", gdpr);
+app.route("/api/v1", gdpr_default);
 app.notFound((c) => {
   const requestId = c.get("requestId") || "unknown";
   console.warn("[NOT_FOUND]", {
