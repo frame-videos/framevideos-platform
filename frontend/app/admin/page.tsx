@@ -120,7 +120,7 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between p-4 bg-black/20 rounded-lg">
                 <div>
                   <h4 className="font-semibold">Usuários do Site</h4>
-                  <p class="text-sm text-gray-400">Gerencie quem pode adicionar vídeos</p>
+                  <p className="text-sm text-gray-400">Gerencie quem pode adicionar vídeos</p>
                 </div>
                 <button 
                   onClick={() => alert('Funcionalidade em desenvolvimento: Gerenciar Usuários')}
