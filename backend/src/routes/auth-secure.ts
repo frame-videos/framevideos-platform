@@ -84,6 +84,18 @@ auth.post('/register', asyncHandler(async (c) => {
   // Also validate via error-handler
   validatePasswordStrength(password);
 
+  // Check if user exists FIRST (before creating tenant)
+  const existingUserCheck = await withRetry(() => db.getUserByEmail(email));
+  if (existingUserCheck) {
+    await logSecurityEvent(rawDB, {
+      eventType: SecurityEventType.REGISTER_FAILED,
+      ipAddress: clientIP,
+      email,
+      details: { reason: 'duplicate_email' },
+    });
+    throw new ConflictError('User already exists', { email });
+  }
+
   // Resolve tenant: use provided tenantId or auto-create one
   let tenant;
   if (tenantId) {
@@ -93,31 +105,20 @@ auth.post('/register', asyncHandler(async (c) => {
       throw new ValidationError('Invalid tenant ID', { tenantId });
     }
   } else {
-    // Auto-create tenant from user info
-    const emailDomain = email.split('@')[1] || 'default.com';
-    const tenantName = name || email.split('@')[0];
+    // Auto-create tenant with unique domain per user
+    const emailPrefix = email.split('@')[0];
+    const uniqueDomain = `${emailPrefix}-${crypto.randomUUID().slice(0, 8)}.framevideos.com`;
+    const tenantName = name || emailPrefix;
     tenant = {
       id: crypto.randomUUID(),
       name: tenantName,
-      domain: emailDomain,
+      domain: uniqueDomain,
       createdAt: new Date().toISOString(),
     };
     await withRetry(() => db.createTenant(tenant));
     tenantId = tenant.id;
   }
 
-  // Check if user exists (with retry)
-  const existingUser = await withRetry(() => db.getUserByEmail(email));
-  
-  if (existingUser) {
-    await logSecurityEvent(rawDB, {
-      eventType: SecurityEventType.REGISTER_FAILED,
-      ipAddress: clientIP,
-      email,
-      details: { reason: 'duplicate_email' },
-    });
-    throw new ConflictError('User already exists', { email });
-  }
 
   // Create user
   const user: User = {
