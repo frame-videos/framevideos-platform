@@ -4,7 +4,6 @@
  */
 
 import { Hono } from 'hono';
-import { verifyToken, extractToken } from '../auth';
 import { D1Database } from '../database-d1';
 import {
   asyncHandler,
@@ -16,33 +15,13 @@ import {
   validateUUID,
   withRetry,
 } from '../error-handler';
+import { authenticate, requireAdmin } from '../middleware/auth';
 
 type Variables = {
   db: D1Database;
 };
 
 const analytics = new Hono<{ Variables: Variables }>();
-
-// ============================================================================
-// Authentication Middleware
-// ============================================================================
-
-async function authenticate(c: any, next: any) {
-  const token = extractToken(c.req.header('Authorization'));
-  
-  if (!token) {
-    throw new AuthenticationError('Authentication required');
-  }
-
-  const payload = await verifyToken(token);
-  
-  if (!payload) {
-    throw new AuthenticationError('Invalid or expired token');
-  }
-
-  c.set('user', payload);
-  await next();
-}
 
 // ============================================================================
 // Get Video Analytics
@@ -264,10 +243,10 @@ analytics.post('/videos/:id/share', asyncHandler(async (c) => {
 }));
 
 // ============================================================================
-// Get Dashboard Analytics
+// Get Dashboard Analytics (Admin only)
 // ============================================================================
 
-analytics.get('/dashboard', authenticate, asyncHandler(async (c) => {
+analytics.get('/dashboard', authenticate, requireAdmin, asyncHandler(async (c) => {
   const user = c.get('user');
   const db = c.get('db');
 
