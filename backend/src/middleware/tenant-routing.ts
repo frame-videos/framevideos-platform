@@ -48,6 +48,33 @@ export async function tenantRouting(c: Context, next: Next) {
     throw new NotFoundError(`Domain not configured: ${domain}`);
   }
 
+  // Check tenant status
+  if (tenant.status === 'suspended') {
+    console.warn('[TENANT_ROUTING] Tenant suspended:', {
+      domain,
+      tenantId: tenant.id,
+      timestamp: new Date().toISOString(),
+    });
+    
+    return c.json({
+      error: 'This account has been suspended. Please contact support.',
+      code: 'TENANT_SUSPENDED',
+    }, 403);
+  }
+
+  if (tenant.status === 'cancelled') {
+    console.warn('[TENANT_ROUTING] Tenant cancelled:', {
+      domain,
+      tenantId: tenant.id,
+      timestamp: new Date().toISOString(),
+    });
+    
+    return c.json({
+      error: 'This account has been cancelled.',
+      code: 'TENANT_CANCELLED',
+    }, 403);
+  }
+
   // Set domain tenant context
   const domainContext: DomainTenantContext = {
     tenantId: tenant.id,
@@ -74,11 +101,11 @@ export async function tenantRouting(c: Context, next: Next) {
 async function findTenantByDomain(
   db: D1Database,
   domain: string
-): Promise<{ id: string; isCustomDomain: boolean } | null> {
+): Promise<{ id: string; isCustomDomain: boolean; status: string } | null> {
   // Try custom_domain first
   const customDomainResult = await db.db
     .prepare(
-      `SELECT id FROM tenants 
+      `SELECT id, status FROM tenants 
        WHERE custom_domain = ? 
        AND custom_domain_status = 'active' 
        LIMIT 1`
@@ -90,12 +117,13 @@ async function findTenantByDomain(
     return {
       id: customDomainResult.id as string,
       isCustomDomain: true,
+      status: customDomainResult.status as string || 'active',
     };
   }
 
   // Try default domain
   const defaultDomainResult = await db.db
-    .prepare('SELECT id FROM tenants WHERE domain = ? LIMIT 1')
+    .prepare('SELECT id, status FROM tenants WHERE domain = ? LIMIT 1')
     .bind(domain)
     .first();
 
@@ -103,6 +131,7 @@ async function findTenantByDomain(
     return {
       id: defaultDomainResult.id as string,
       isCustomDomain: false,
+      status: defaultDomainResult.status as string || 'active',
     };
   }
 

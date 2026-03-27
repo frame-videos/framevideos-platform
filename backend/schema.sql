@@ -15,7 +15,14 @@ CREATE TABLE IF NOT EXISTS tenants (
   custom_domain_cloudflare_id TEXT,
   custom_domain_ssl_status TEXT,
   custom_domain_verified_at TEXT,
-  custom_domain_created_at TEXT
+  custom_domain_created_at TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'suspended', 'cancelled', 'pending')),
+  suspended_at TEXT,
+  suspended_reason TEXT,
+  cancelled_at TEXT,
+  cancelled_reason TEXT,
+  reactivated_at TEXT,
+  updated_at TEXT
 );
 
 -- ============================================================================
@@ -207,6 +214,23 @@ CREATE INDEX IF NOT EXISTS idx_security_events_timestamp ON security_events(time
 CREATE INDEX IF NOT EXISTS idx_security_events_resource ON security_events(resource_type, resource_id);
 
 -- ============================================================================
+-- Tenant Lifecycle Log
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS tenant_lifecycle_log (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  action TEXT NOT NULL CHECK(action IN ('created', 'activated', 'suspended', 'cancelled', 'reactivated')),
+  previous_status TEXT,
+  new_status TEXT NOT NULL,
+  reason TEXT,
+  performed_by TEXT,
+  ip_address TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
 -- Indexes
 -- ============================================================================
 
@@ -223,6 +247,13 @@ CREATE INDEX IF NOT EXISTS idx_videos_created ON videos(created_at DESC);
 
 -- Tenants
 CREATE INDEX IF NOT EXISTS idx_tenants_custom_domain ON tenants(custom_domain);
+CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status);
+CREATE INDEX IF NOT EXISTS idx_tenants_updated_at ON tenants(updated_at DESC);
+
+-- Tenant Lifecycle Log
+CREATE INDEX IF NOT EXISTS idx_tenant_lifecycle_tenant ON tenant_lifecycle_log(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_lifecycle_action ON tenant_lifecycle_log(action);
+CREATE INDEX IF NOT EXISTS idx_tenant_lifecycle_created ON tenant_lifecycle_log(created_at DESC);
 
 -- Categories
 CREATE INDEX IF NOT EXISTS idx_categories_tenant ON categories(tenant_id);

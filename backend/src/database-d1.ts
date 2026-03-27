@@ -34,7 +34,14 @@ export class D1Database {
       name: result.name,
       domain: result.domain,
       createdAt: result.created_at,
-    } as Tenant;
+      status: result.status || 'active',
+      suspendedAt: result.suspended_at || null,
+      suspendedReason: result.suspended_reason || null,
+      cancelledAt: result.cancelled_at || null,
+      cancelledReason: result.cancelled_reason || null,
+      reactivatedAt: result.reactivated_at || null,
+      updatedAt: result.updated_at || null,
+    } as any;
   }
 
   async getTenantByDomain(domain: string): Promise<Tenant | null> {
@@ -48,7 +55,108 @@ export class D1Database {
       name: result.name,
       domain: result.domain,
       createdAt: result.created_at,
-    } as Tenant;
+      status: result.status || 'active',
+      suspendedAt: result.suspended_at || null,
+      suspendedReason: result.suspended_reason || null,
+      cancelledAt: result.cancelled_at || null,
+      cancelledReason: result.cancelled_reason || null,
+      reactivatedAt: result.reactivated_at || null,
+      updatedAt: result.updated_at || null,
+    } as any;
+  }
+
+  async updateTenantStatus(
+    id: string, 
+    status: 'active' | 'suspended' | 'cancelled', 
+    updates: {
+      suspendedAt?: string | null;
+      suspendedReason?: string | null;
+      cancelledAt?: string | null;
+      cancelledReason?: string | null;
+      reactivatedAt?: string | null;
+    }
+  ): Promise<void> {
+    const updatedAt = new Date().toISOString();
+    
+    await this.db
+      .prepare(`
+        UPDATE tenants 
+        SET 
+          status = ?,
+          suspended_at = ?,
+          suspended_reason = ?,
+          cancelled_at = ?,
+          cancelled_reason = ?,
+          reactivated_at = ?,
+          updated_at = ?
+        WHERE id = ?
+      `)
+      .bind(
+        status,
+        updates.suspendedAt || null,
+        updates.suspendedReason || null,
+        updates.cancelledAt || null,
+        updates.cancelledReason || null,
+        updates.reactivatedAt || null,
+        updatedAt,
+        id
+      )
+      .run();
+  }
+
+  async logTenantLifecycleEvent(event: {
+    id: string;
+    tenantId: string;
+    action: 'created' | 'activated' | 'suspended' | 'cancelled' | 'reactivated';
+    previousStatus: string | null;
+    newStatus: string;
+    reason?: string;
+    performedBy?: string;
+    ipAddress?: string;
+    createdAt: string;
+  }): Promise<void> {
+    await this.db
+      .prepare(`
+        INSERT INTO tenant_lifecycle_log 
+        (id, tenant_id, action, previous_status, new_status, reason, performed_by, ip_address, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        event.id,
+        event.tenantId,
+        event.action,
+        event.previousStatus,
+        event.newStatus,
+        event.reason || null,
+        event.performedBy || null,
+        event.ipAddress || null,
+        event.createdAt
+      )
+      .run();
+  }
+
+  async getTenantLifecycleLog(tenantId: string, limit = 50): Promise<any[]> {
+    const result = await this.db
+      .prepare(`
+        SELECT * FROM tenant_lifecycle_log 
+        WHERE tenant_id = ? 
+        ORDER BY created_at DESC 
+        LIMIT ?
+      `)
+      .bind(tenantId, limit)
+      .all();
+    
+    return (result.results || []).map((row: any) => ({
+      id: row.id,
+      tenantId: row.tenant_id,
+      action: row.action,
+      previousStatus: row.previous_status,
+      newStatus: row.new_status,
+      reason: row.reason,
+      performedBy: row.performed_by,
+      ipAddress: row.ip_address,
+      createdAt: row.created_at,
+    }));
   }
 
   // ============================================================================

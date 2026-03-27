@@ -19,6 +19,9 @@ export enum AuditEventType {
   TENANT_CREATE = 'tenant_create',
   TENANT_UPDATE = 'tenant_update',
   TENANT_DELETE = 'tenant_delete',
+  TENANT_SUSPEND = 'tenant_suspend',
+  TENANT_REACTIVATE = 'tenant_reactivate',
+  TENANT_CANCEL = 'tenant_cancel',
   
   // User events
   USER_CREATE = 'user_create',
