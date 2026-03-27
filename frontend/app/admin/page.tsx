@@ -9,10 +9,17 @@ export default function AdminDashboard() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && !isAdmin) {
+    // Se não tá carregando e não tem user, redireciona pro login
+    if (!isLoading && !user) {
+      router.push('/auth/login');
+      return;
+    }
+    
+    // Se tem user mas não é admin, redireciona pro dashboard
+    if (!isLoading && user && !isAdmin) {
       router.push('/dashboard');
     }
-  }, [isLoading, isAdmin, router]);
+  }, [isLoading, user, isAdmin, router]);
 
   if (isLoading) {
     return (
@@ -45,7 +52,10 @@ export default function AdminDashboard() {
             <h3 className="text-lg font-semibold mb-2">🌐 Seu Site</h3>
             <p className="text-gray-400 text-sm mb-1">Domínio:</p>
             <p className="text-primary-400 font-mono text-sm mb-4">{user?.tenant?.domain}</p>
-            <button className="bg-primary-600 hover:bg-primary-700 px-4 py-2 rounded-lg text-sm transition w-full">
+            <button 
+              onClick={() => alert('Funcionalidade em desenvolvimento: Configurar Domínio Customizado')}
+              className="bg-primary-600 hover:bg-primary-700 px-4 py-2 rounded-lg text-sm transition w-full"
+            >
               Configurar Domínio Customizado
             </button>
           </div>
@@ -56,7 +66,10 @@ export default function AdminDashboard() {
             <code className="block bg-black/30 px-3 py-2 rounded text-primary-400 text-xs font-mono mb-4">
               sites.framevideos.com
             </code>
-            <button className="border border-primary-600 hover:bg-primary-600/10 px-4 py-2 rounded-lg text-sm transition w-full">
+            <button 
+              onClick={() => alert('Instruções CNAME:\n\n1. Acesse o painel do seu domínio\n2. Adicione um registro CNAME\n3. Aponte para: sites.framevideos.com\n4. Aguarde propagação DNS (5-30 min)')}
+              className="border border-primary-600 hover:bg-primary-600/10 px-4 py-2 rounded-lg text-sm transition w-full"
+            >
               Ver Instruções
             </button>
           </div>
@@ -65,7 +78,10 @@ export default function AdminDashboard() {
             <h3 className="text-lg font-semibold mb-2">💎 Plano</h3>
             <p className="text-gray-400 text-sm mb-1">Plano Atual:</p>
             <p className="text-white font-semibold mb-4">Starter - $29/mês</p>
-            <button className="border border-primary-600 hover:bg-primary-600/10 px-4 py-2 rounded-lg text-sm transition w-full">
+            <button 
+              onClick={() => alert('Funcionalidade em desenvolvimento: Upgrade de Plano')}
+              className="border border-primary-600 hover:bg-primary-600/10 px-4 py-2 rounded-lg text-sm transition w-full"
+            >
               Fazer Upgrade
             </button>
           </div>
@@ -80,7 +96,10 @@ export default function AdminDashboard() {
                   <h4 className="font-semibold">Nome do Site</h4>
                   <p className="text-sm text-gray-400">{user?.tenant?.name}</p>
                 </div>
-                <button className="text-primary-400 hover:text-primary-300 text-sm">
+                <button 
+                  onClick={() => alert('Funcionalidade em desenvolvimento: Editar Nome do Site')}
+                  className="text-primary-400 hover:text-primary-300 text-sm"
+                >
                   Editar
                 </button>
               </div>
@@ -90,7 +109,10 @@ export default function AdminDashboard() {
                   <h4 className="font-semibold">Logo & Branding</h4>
                   <p className="text-sm text-gray-400">Personalize a aparência</p>
                 </div>
-                <button className="text-primary-400 hover:text-primary-300 text-sm">
+                <button 
+                  onClick={() => alert('Funcionalidade em desenvolvimento: Configurar Logo & Branding')}
+                  className="text-primary-400 hover:text-primary-300 text-sm"
+                >
                   Configurar
                 </button>
               </div>
@@ -98,9 +120,12 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between p-4 bg-black/20 rounded-lg">
                 <div>
                   <h4 className="font-semibold">Usuários do Site</h4>
-                  <p className="text-sm text-gray-400">Gerencie quem pode adicionar vídeos</p>
+                  <p class="text-sm text-gray-400">Gerencie quem pode adicionar vídeos</p>
                 </div>
-                <button className="text-primary-400 hover:text-primary-300 text-sm">
+                <button 
+                  onClick={() => alert('Funcionalidade em desenvolvimento: Gerenciar Usuários')}
+                  className="text-primary-400 hover:text-primary-300 text-sm"
+                >
                   Gerenciar
                 </button>
               </div>

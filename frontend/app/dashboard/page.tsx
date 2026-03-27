@@ -15,10 +15,17 @@ export default function DashboardPage() {
 
   // Redirect admin users to /admin
   useEffect(() => {
+    // Se não tem user e não tá carregando, redireciona pro login
+    if (!authLoading && !user) {
+      router.push('/auth/login');
+      return;
+    }
+    
+    // Se tem user e é admin, redireciona pro /admin
     if (user && isAdmin) {
       router.push('/admin');
     }
-  }, [user, isAdmin, router]);
+  }, [authLoading, user, isAdmin, router]);
 
   if (authLoading) {
     return (
