@@ -4,11 +4,21 @@ import { useAuth } from '@/lib/hooks/use-auth';
 import { useVideos } from '@/lib/hooks/use-videos';
 import { useTrending } from '@/lib/hooks/use-analytics';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function DashboardPage() {
-  const { user, isLoading: authLoading, logout } = useAuth();
+  const { user, isAdmin, isLoading: authLoading, logout } = useAuth();
   const { data: videos, isLoading: videosLoading } = useVideos();
   const { data: trending, isLoading: trendingLoading } = useTrending();
+  const router = useRouter();
+
+  // Redirect admin users to /admin
+  useEffect(() => {
+    if (user && isAdmin) {
+      router.push('/admin');
+    }
+  }, [user, isAdmin, router]);
 
   if (authLoading) {
     return (

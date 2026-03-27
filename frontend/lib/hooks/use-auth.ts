@@ -43,7 +43,10 @@ export function useAuth() {
         localStorage.setItem('auth_token', data.token);
         // Invalidar query de auth pra buscar user info
         queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
-        router.push('/dashboard');
+        // Redirect baseado no role
+        const role = data.user?.role;
+        const redirectTo = (role === 'admin' || role === 'super_admin') ? '/admin' : '/dashboard';
+        router.push(redirectTo);
       }
     },
   });
@@ -57,7 +60,10 @@ export function useAuth() {
       if (data.token) {
         localStorage.setItem('auth_token', data.token);
         queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
-        router.push('/dashboard');
+        // Redirect baseado no role
+        const role = data.user?.role;
+        const redirectTo = (role === 'admin' || role === 'super_admin') ? '/admin' : '/dashboard';
+        router.push(redirectTo);
       }
     },
   });
@@ -72,6 +78,8 @@ export function useAuth() {
     user,
     isLoading,
     isAuthenticated: !!user,
+    isAdmin: user?.role === 'admin' || user?.role === 'super_admin',
+    isSuperAdmin: user?.role === 'super_admin',
     login: loginMutation.mutate,
     register: registerMutation.mutate,
     logout,
