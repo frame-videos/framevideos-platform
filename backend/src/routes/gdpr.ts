@@ -1,63 +1,105 @@
 import { Hono } from 'hono';
-import { authenticate } from '../middleware/auth';
-import { getUserData, softDeleteUser } from '../database-d1';
-import { asyncHandler } from '../error-handler';
+import { verifyToken, extractToken } from '../auth';
+import { D1Database } from '../database-d1';
+import {
+  asyncHandler,
+  AuthenticationError,
+  withRetry,
+} from '../error-handler';
 
-type Bindings = {
-  DB: any;
+type Variables = {
+  db: D1Database;
 };
 
-const gdpr = new Hono<{ Bindings: Bindings }>();
+const gdpr = new Hono<{ Variables: Variables }>();
 
-// Apply auth middleware to all GDPR routes
-gdpr.use('*', authenticate);
+// ============================================================================
+// Authentication Middleware
+// ============================================================================
 
-/**
- * GET /api/v1/users/me/data
- * Export all user data (GDPR Right to Data Portability)
- */
-gdpr.get('/users/me/data', asyncHandler(async (c) => {
-  const user = c.get('user');
-  const userId = user?.sub;
+async function authenticate(c: any, next: any) {
+  const token = extractToken(c.req.header('Authorization'));
   
-  if (!userId) {
-    return c.json({ error: 'Unauthorized' }, 401);
+  if (!token) {
+    throw new AuthenticationError('Authentication required');
   }
 
-  const userData = await getUserData(c.env.DB, userId);
+  const payload = await verifyToken(token);
+  
+  if (!payload) {
+    throw new AuthenticationError('Invalid or expired token');
+  }
+
+  c.set('user', payload);
+  await next();
+}
+
+// ============================================================================
+// Export User Data (GDPR Article 15 - Right to Access)
+// ============================================================================
+
+gdpr.get('/users/me/data', authenticate, asyncHandler(async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+
+  // Get user data
+  const userData = await withRetry(() => db.getUserById(user.sub));
   
   if (!userData) {
     return c.json({ error: 'User not found' }, 404);
   }
 
-  // Return complete user data export
-  return c.json({
-    export_date: new Date().toISOString(),
-    user: userData,
-  });
+  // Get user's videos
+  const videos = await withRetry(() => db.getVideosByUser(user.sub));
+
+  // Get tenant data
+  const tenant = await withRetry(() => db.getTenantById(userData.tenantId));
+
+  // Prepare export
+  const exportData = {
+    user: {
+      id: userData.id,
+      email: userData.email,
+      name: userData.name,
+      role: userData.role,
+      createdAt: userData.createdAt,
+      privacyPolicyAcceptedAt: userData.privacyPolicyAcceptedAt,
+      termsAcceptedAt: userData.termsAcceptedAt,
+    },
+    tenant: tenant ? {
+      id: tenant.id,
+      name: tenant.name,
+      domain: tenant.domain,
+      createdAt: tenant.createdAt,
+    } : null,
+    videos: videos.map(v => ({
+      id: v.id,
+      title: v.title,
+      description: v.description,
+      url: v.url,
+      views: v.views,
+      createdAt: v.createdAt,
+    })),
+    exportedAt: new Date().toISOString(),
+  };
+
+  return c.json(exportData);
 }));
 
-/**
- * DELETE /api/v1/users/me/delete
- * Soft delete user account + anonymize data (GDPR Right to be Forgotten)
- */
-gdpr.delete('/users/me/delete', asyncHandler(async (c) => {
-  const user = c.get('user');
-  const userId = user?.sub;
-  
-  if (!userId) {
-    return c.json({ error: 'Unauthorized' }, 401);
-  }
+// ============================================================================
+// Delete User Account (GDPR Article 17 - Right to be Forgotten)
+// ============================================================================
 
-  const result = await softDeleteUser(c.env.DB, userId);
-  
-  if (!result) {
-    return c.json({ error: 'User not found or already deleted' }, 404);
-  }
+gdpr.delete('/users/me/delete', authenticate, asyncHandler(async (c) => {
+  const user = c.get('user');
+  const db = c.get('db');
+
+  // Soft delete user
+  await withRetry(() => db.softDeleteUser(user.sub));
 
   return c.json({
-    message: 'Account successfully deleted',
-    deleted_at: result.deleted_at,
+    message: 'Your account has been deleted. All personal data will be anonymized within 30 days.',
+    deletedAt: new Date().toISOString(),
   });
 }));
 

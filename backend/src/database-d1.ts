@@ -127,6 +127,14 @@ export class D1Database {
     return result.results as any[];
   }
 
+  async softDeleteUser(userId: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare('UPDATE users SET deleted_at = ? WHERE id = ?')
+      .bind(now, userId)
+      .run();
+  }
+
   // ============================================================================
   // Videos
   // ============================================================================
