@@ -80,8 +80,8 @@ export class KVRateLimiter {
     // Increment count
     count++;
     
-    // Store in KV with expiration
-    const ttl = Math.ceil((resetAt - now) / 1000);
+    // Store in KV with expiration (minimum 60 seconds)
+    const ttl = Math.max(60, Math.ceil((resetAt - now) / 1000));
     await this.kv.put(
       kvKey,
       JSON.stringify({ count, resetAt }),

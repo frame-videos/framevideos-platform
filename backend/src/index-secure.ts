@@ -11,7 +11,7 @@ import tags from './routes/tags';
 import videosSearch from './routes/videos-search';
 import analytics from './routes/analytics';
 import audit from './routes/audit';
-import { gdpr } from './routes/gdpr';
+import gdpr from './routes/gdpr';
 import { FrameVideosError } from './error-handler';
 import { D1Database } from './database-d1';
 import { publicRateLimit } from './middleware/rate-limit';

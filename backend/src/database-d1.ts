@@ -610,4 +610,103 @@ export class D1Database {
       .all();
     return result.results as any[];
   }
+
+  // ============================================================================
+  // GDPR Compliance
+  // ============================================================================
+
+  /**
+   * Get complete user data export (GDPR Right to Data Portability)
+   */
+  async getUserData(userId: string): Promise<any | null> {
+    const user = await this.getUserById(userId);
+    if (!user) return null;
+
+    // Get user's videos
+    const videos = await this.getVideosByUser(userId);
+
+    // Get user's analytics events
+    const analyticsResult = await this.db
+      .prepare('SELECT * FROM analytics WHERE user_id = ? ORDER BY created_at DESC')
+      .bind(userId)
+      .all();
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tenantId: user.tenantId,
+        createdAt: user.createdAt,
+        privacyPolicyAcceptedAt: user.privacyPolicyAcceptedAt,
+        termsAcceptedAt: user.termsAcceptedAt,
+      },
+      videos: videos.map((v: any) => ({
+        id: v.id,
+        title: v.title,
+        description: v.description,
+        status: v.status,
+        duration: v.duration,
+        url: v.url,
+        thumbnailUrl: v.thumbnail_url,
+        createdAt: v.created_at,
+        updatedAt: v.updated_at,
+      })),
+      analytics: analyticsResult.results,
+    };
+  }
+
+  /**
+   * Soft delete user + anonymize data (GDPR Right to be Forgotten)
+   */
+  async softDeleteUser(userId: string): Promise<{ deleted_at: string } | null> {
+    const user = await this.getUserById(userId);
+    if (!user || user.deletedAt) return null;
+
+    const deletedAt = new Date().toISOString();
+    const anonymizedEmail = `deleted-${userId}@anonymized.local`;
+
+    // Soft delete + anonymize
+    await this.db
+      .prepare(`
+        UPDATE users 
+        SET 
+          deleted_at = ?,
+          email = ?,
+          name = ?,
+          password = ?
+        WHERE id = ?
+      `)
+      .bind(deletedAt, anonymizedEmail, 'Deleted User', '', userId)
+      .run();
+
+    // Anonymize user's videos
+    await this.db
+      .prepare(`
+        UPDATE videos 
+        SET 
+          title = 'Deleted Video',
+          description = 'This video has been deleted by the user'
+        WHERE user_id = ?
+      `)
+      .bind(userId)
+      .run();
+
+    return { deleted_at: deletedAt };
+  }
+}
+
+// ============================================================================
+// Standalone GDPR Functions (for route usage)
+// ============================================================================
+
+export async function getUserData(db: D1Binding, userId: string): Promise<any | null> {
+  const database = new D1Database(db);
+  return database.getUserData(userId);
+}
+
+export async function softDeleteUser(db: D1Binding, userId: string): Promise<{ deleted_at: string } | null> {
+  const database = new D1Database(db);
+  return database.softDeleteUser(userId);
 }
