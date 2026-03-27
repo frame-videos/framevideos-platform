@@ -57,8 +57,8 @@ export class D1Database {
 
   async createUser(user: any): Promise<any> {
     await this.db
-      .prepare('INSERT INTO users (id, email, password, tenant_id, name, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(user.id, user.email, user.password, user.tenantId, user.name || '', user.createdAt)
+      .prepare('INSERT INTO users (id, email, password, tenant_id, name, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(user.id, user.email, user.password, user.tenantId, user.name || '', user.role || 'user', user.createdAt)
       .run();
     return user;
   }
@@ -74,6 +74,7 @@ export class D1Database {
       email: result.email,
       password: result.password,
       name: result.name,
+      role: result.role || 'user',
       tenantId: result.tenant_id,
       createdAt: result.created_at,
     };
@@ -90,6 +91,7 @@ export class D1Database {
       email: result.email,
       password: result.password,
       name: result.name,
+      role: result.role || 'user',
       tenantId: result.tenant_id,
       createdAt: result.created_at,
     };

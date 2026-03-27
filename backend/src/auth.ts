@@ -3,6 +3,7 @@ import * as bcrypt from 'bcryptjs';
 export interface User {
   id: string;
   email: string;
+  role: string;
   tenantId: string;
   createdAt: string;
 }
@@ -10,6 +11,7 @@ export interface User {
 export interface JWTPayload {
   sub: string;
   email: string;
+  role: string;
   tenantId: string;
   iat: number;
   exp: number;
@@ -91,6 +93,7 @@ export async function generateToken(user: User): Promise<string> {
   const payload: JWTPayload = {
     sub: user.id,
     email: user.email,
+    role: user.role || 'user',
     tenantId: user.tenantId,
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 7 days

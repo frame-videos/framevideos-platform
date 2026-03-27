@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
   password TEXT NOT NULL,
   tenant_id TEXT NOT NULL,
   name TEXT,
+  role TEXT NOT NULL DEFAULT 'user',
   created_at TEXT NOT NULL,
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
   UNIQUE(email, tenant_id)
@@ -181,6 +182,7 @@ CREATE INDEX IF NOT EXISTS idx_security_audit_ip ON security_audit_log(ip_addres
 -- Users
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
 -- Videos
 CREATE INDEX IF NOT EXISTS idx_videos_user ON videos(user_id);

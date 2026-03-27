@@ -120,11 +120,18 @@ auth.post('/register', asyncHandler(async (c) => {
   }
 
 
+  // Detect if registering on framevideos.com (admin) or custom domain (user)
+  const origin = c.req.header('origin') || '';
+  const referer = c.req.header('referer') || '';
+  const isFrameVideosDomain = origin.includes('framevideos.com') || referer.includes('framevideos.com');
+  const userRole = isFrameVideosDomain ? 'admin' : 'user';
+
   // Create user
   const user: User = {
     id: crypto.randomUUID(),
     email,
     password: await hashPassword(password),
+    role: userRole,
     tenantId,
     createdAt: new Date().toISOString(),
   };
@@ -429,6 +436,7 @@ auth.get('/me', asyncHandler(async (c) => {
   return c.json({
     id: user.id,
     email: user.email,
+    role: user.role,
     tenantId: user.tenantId,
     tenant: {
       id: tenant.id,
