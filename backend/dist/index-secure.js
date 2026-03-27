@@ -8244,6 +8244,62 @@ var securityHeaders = /* @__PURE__ */ __name(() => {
   };
 }, "securityHeaders");
 
+// src/middleware/tenant-routing.ts
+async function tenantRouting(c, next) {
+  const db = c.get("db");
+  const host = c.req.header("Host");
+  if (!host) {
+    throw new NotFoundError("Host header missing");
+  }
+  const domain = host.split(":")[0];
+  const tenant = await findTenantByDomain(db, domain);
+  if (!tenant) {
+    console.warn("[TENANT_ROUTING] Domain not found:", {
+      domain,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      ip: c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "unknown"
+    });
+    throw new NotFoundError(`Domain not configured: ${domain}`);
+  }
+  const domainContext = {
+    tenantId: tenant.id,
+    tenantDomain: domain,
+    isCustomDomain: tenant.isCustomDomain
+  };
+  c.set("domainTenantContext", domainContext);
+  console.log("[TENANT_ROUTING] Routed:", {
+    domain,
+    tenantId: tenant.id,
+    isCustomDomain: tenant.isCustomDomain,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  await next();
+}
+__name(tenantRouting, "tenantRouting");
+async function findTenantByDomain(db, domain) {
+  const customDomainResult = await db.db.prepare(
+    `SELECT id FROM tenants 
+       WHERE custom_domain = ? 
+       AND custom_domain_status = 'active' 
+       LIMIT 1`
+  ).bind(domain).first();
+  if (customDomainResult) {
+    return {
+      id: customDomainResult.id,
+      isCustomDomain: true
+    };
+  }
+  const defaultDomainResult = await db.db.prepare("SELECT id FROM tenants WHERE domain = ? LIMIT 1").bind(domain).first();
+  if (defaultDomainResult) {
+    return {
+      id: defaultDomainResult.id,
+      isCustomDomain: false
+    };
+  }
+  return null;
+}
+__name(findTenantByDomain, "findTenantByDomain");
+
 // src/index-secure.ts
 var app = new Hono2();
 app.use("*", async (c, next) => {
@@ -8266,6 +8322,7 @@ app.use("*", async (c, next) => {
   c.header("X-Request-ID", requestId);
   await next();
 });
+app.use("/api/v1/*", tenantRouting);
 app.use("/api/v1/*", publicRateLimit);
 app.get("/health", (c) => {
   return c.json({

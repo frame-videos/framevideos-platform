@@ -16,6 +16,7 @@ import {
   withRetry,
 } from '../error-handler';
 import { authenticate, requireAdmin } from '../middleware/auth';
+import { getDomainTenantContext } from '../middleware/tenant-routing';
 
 type Variables = {
   db: D1Database;

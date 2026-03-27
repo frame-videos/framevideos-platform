@@ -11,6 +11,7 @@ import {
   ErrorCode,
   validateRequired,
 } from '../error-handler';
+import { getDomainTenantContext } from '../middleware/tenant-routing';
 
 type Variables = {
   db: D1Database;
@@ -24,26 +25,9 @@ const videosSearch = new Hono<{ Variables: Variables }>();
  */
 videosSearch.get('/', async (c) => {
   try {
-    // Get tenant from token
-    const token = extractToken(c);
-    if (!token) {
-      throw new FrameVideosError(
-        ErrorCode.UNAUTHORIZED,
-        401,
-        'Missing authentication token'
-      );
-    }
-
-    const user = await verifyToken(token);
-    if (!user) {
-      throw new FrameVideosError(
-        ErrorCode.INVALID_TOKEN,
-        401,
-        'Invalid token'
-      );
-    }
-
-    const tenantId = user.tenantId;
+    // Get tenant from domain context (injected by tenant-routing middleware)
+    const domainContext = getDomainTenantContext(c);
+    const tenantId = domainContext.tenantId;
 
     // Get query parameters
     const q = c.req.query('q') || '';

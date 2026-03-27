@@ -18,6 +18,7 @@ import { D1Database } from './database-d1';
 import { publicRateLimit } from './middleware/rate-limit';
 import { securityHeaders } from './middleware/security-headers';
 import { auditContextMiddleware } from './middleware/audit-context';
+import { tenantRouting, DomainTenantContext } from './middleware/tenant-routing';
 
 // Types
 type Bindings = {
@@ -32,6 +33,7 @@ type Bindings = {
 type Variables = {
   db: D1Database;
   requestId: string;
+  domainTenantContext?: DomainTenantContext;
 };
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
@@ -69,6 +71,10 @@ app.use('*', async (c, next) => {
   c.header('X-Request-ID', requestId);
   await next();
 });
+
+// Tenant Routing Middleware - MUST be applied BEFORE all routes
+// Detects tenant from domain (Host header) and injects tenantId into context
+app.use('/api/v1/*', tenantRouting);
 
 // Global rate limiting for public endpoints (100 req/min per IP)
 app.use('/api/v1/*', publicRateLimit);
