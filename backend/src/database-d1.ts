@@ -163,6 +163,14 @@ export class D1Database {
     return result.results as any[];
   }
 
+  async getAllVideos(limit = 100, offset = 0): Promise<any[]> {
+    const result = await this.db
+      .prepare('SELECT * FROM videos ORDER BY created_at DESC LIMIT ? OFFSET ?')
+      .bind(limit, offset)
+      .all();
+    return result.results as any[];
+  }
+
   async updateVideo(id: string, updates: any): Promise<any | null> {
     const video = await this.getVideoById(id);
     if (!video) return null;

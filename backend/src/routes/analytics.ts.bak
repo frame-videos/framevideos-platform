@@ -52,7 +52,6 @@ analytics.get('/videos/:id', authenticate, asyncHandler(async (c) => {
   const videoId = c.req.param('id');
   const user = c.get('user');
   const db = c.get('db');
-  const db = c.get('db');
   
   validateUUID(videoId, 'videoId');
 
@@ -131,7 +130,6 @@ analytics.post('/videos/:id/view', asyncHandler(async (c) => {
 analytics.post('/videos/:id/like', authenticate, asyncHandler(async (c) => {
   const videoId = c.req.param('id');
   const user = c.get('user');
-  const db = c.get('db');
   const body = await c.req.json();
   const { liked } = body;
 
@@ -182,7 +180,6 @@ analytics.post('/videos/:id/like', authenticate, asyncHandler(async (c) => {
 analytics.post('/videos/:id/comment', authenticate, asyncHandler(async (c) => {
   const videoId = c.req.param('id');
   const user = c.get('user');
-  const db = c.get('db');
   const body = await c.req.json();
   const { comment } = body;
 
@@ -270,7 +267,6 @@ analytics.post('/videos/:id/share', asyncHandler(async (c) => {
 
 analytics.get('/dashboard', authenticate, asyncHandler(async (c) => {
   const user = c.get('user');
-  const db = c.get('db');
 
   // Get all videos for tenant (with retry)
   const videos = await withRetry(() =>
@@ -329,47 +325,12 @@ analytics.get('/dashboard', authenticate, asyncHandler(async (c) => {
 }));
 
 // ============================================================================
-// Get Trending Videos
-// ============================================================================
-
-analytics.get('/trending', asyncHandler(async (c) => {
-  const db = c.get('db');
-  const limit = parseInt(c.req.query('limit') || '10');
-  const period = c.req.query('period') || '7d'; // 24h, 7d, 30d
-
-  // Get all videos (public endpoint, no auth required)
-  const videos = await withRetry(() => db.getAllVideos());
-
-  // Sort by views (trending = most views recently)
-  const trending = videos
-    .sort((a, b) => (b.views || 0) - (a.views || 0))
-    .slice(0, limit)
-    .map((v) => ({
-      id: v.id,
-      title: v.title,
-      description: v.description,
-      thumbnailUrl: v.thumbnailUrl,
-      views: v.views || 0,
-      likes: v.likes || 0,
-      duration: v.duration,
-      createdAt: v.createdAt,
-    }));
-
-  return c.json({
-    trending,
-    period,
-    total: trending.length,
-  });
-}));
-
-// ============================================================================
 // Get Video Metrics by Date Range
 // ============================================================================
 
 analytics.get('/videos/:id/metrics', authenticate, asyncHandler(async (c) => {
   const videoId = c.req.param('id');
   const user = c.get('user');
-  const db = c.get('db');
   const startDate = c.req.query('startDate');
   const endDate = c.req.query('endDate');
 
