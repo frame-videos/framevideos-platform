@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://frame-videos-prod.frame-videos.workers.dev/api/v1';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://api.framevideos.com/api/v1';
 
 export function apiUrl(path: string): string {
   // Remove leading /api/v1 if present (for backward compat)

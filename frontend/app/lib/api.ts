@@ -1,5 +1,5 @@
 // API Configuration
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.framevideos.com/api/v1';
 
 export function getApiUrl(path: string): string {
   // If path starts with /, remove it

@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://frame-videos-prod.frame-videos.workers.dev/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.framevideos.com/api/v1';
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
