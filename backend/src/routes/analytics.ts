@@ -52,7 +52,6 @@ analytics.get('/videos/:id', authenticate, asyncHandler(async (c) => {
   const videoId = c.req.param('id');
   const user = c.get('user');
   const db = c.get('db');
-  const db = c.get('db');
   
   validateUUID(videoId, 'videoId');
 

@@ -20,6 +20,7 @@ import {
 import { D1RateLimiter, rateLimiter } from '../rate-limiter';
 import { D1AccountLockout, accountLockout } from '../account-lockout';
 import { logSecurityEvent, SecurityEventType } from '../security-audit';
+import { loginRateLimit, registerRateLimit } from '../middleware/rate-limit';
 
 type Bindings = {
   DB: any;
@@ -52,7 +53,7 @@ function getClientIP(c: any): string {
 // Register
 // ============================================================================
 
-auth.post('/register', asyncHandler(async (c) => {
+auth.post('/register', registerRateLimit, asyncHandler(async (c) => {
   const body = await c.req.json();
   const { email, password, name } = body;
   let { tenantId } = body;
@@ -173,7 +174,7 @@ auth.post('/register', asyncHandler(async (c) => {
 // Login (with Rate Limiting + Account Lockout)
 // ============================================================================
 
-auth.post('/login', asyncHandler(async (c) => {
+auth.post('/login', loginRateLimit, asyncHandler(async (c) => {
   const body = await c.req.json();
   const { email, password } = body;
   const db = c.get('db');

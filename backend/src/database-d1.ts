@@ -65,7 +65,7 @@ export class D1Database {
 
   async getUserByEmail(email: string): Promise<any | null> {
     const result = await this.db
-      .prepare('SELECT * FROM users WHERE email = ?')
+      .prepare('SELECT * FROM users WHERE email = ? AND deleted_at IS NULL')
       .bind(email)
       .first();
     if (!result) return null;
@@ -77,6 +77,9 @@ export class D1Database {
       role: result.role || 'user',
       tenantId: result.tenant_id,
       createdAt: result.created_at,
+      deletedAt: result.deleted_at || null,
+      privacyPolicyAcceptedAt: result.privacy_policy_accepted_at || null,
+      termsAcceptedAt: result.terms_accepted_at || null,
     };
   }
 
@@ -94,6 +97,9 @@ export class D1Database {
       role: result.role || 'user',
       tenantId: result.tenant_id,
       createdAt: result.created_at,
+      deletedAt: result.deleted_at || null,
+      privacyPolicyAcceptedAt: result.privacy_policy_accepted_at || null,
+      termsAcceptedAt: result.terms_accepted_at || null,
     };
   }
 

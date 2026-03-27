@@ -10,12 +10,16 @@ import {
   validateUUID,
   withRetry,
 } from '../error-handler';
+import { authenticate, requireSuperAdmin } from '../middleware/auth';
 
 type Variables = {
   db: D1Database;
 };
 
 const tenants = new Hono<{ Variables: Variables }>();
+
+// Apply super_admin middleware to all tenant routes
+tenants.use('*', authenticate, requireSuperAdmin);
 
 // ============================================================================
 // Create Tenant

@@ -13,6 +13,7 @@ export interface JWTPayload {
   email: string;
   role: string;
   tenantId: string;
+  isSuperAdmin: boolean;
   iat: number;
   exp: number;
 }
@@ -95,6 +96,7 @@ export async function generateToken(user: User): Promise<string> {
     email: user.email,
     role: user.role || 'user',
     tenantId: user.tenantId,
+    isSuperAdmin: user.role === 'super_admin',
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 7 days
   };

@@ -12,6 +12,8 @@ import videosSearch from './routes/videos-search';
 import analytics from './routes/analytics';
 import { FrameVideosError } from './error-handler';
 import { D1Database } from './database-d1';
+import { publicRateLimit } from './middleware/rate-limit';
+import { securityHeaders } from './middleware/security-headers';
 
 // Types
 type Bindings = {
@@ -50,14 +52,8 @@ app.use('*', cors({
   exposeHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'],
 }));
 
-// Security headers
-app.use('*', async (c, next) => {
-  await next();
-  c.header('X-Content-Type-Options', 'nosniff');
-  c.header('X-Frame-Options', 'DENY');
-  c.header('X-XSS-Protection', '1; mode=block');
-  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
-});
+// Security headers middleware (global)
+app.use('*', securityHeaders());
 
 // Request ID middleware
 app.use('*', async (c, next) => {
@@ -66,6 +62,9 @@ app.use('*', async (c, next) => {
   c.header('X-Request-ID', requestId);
   await next();
 });
+
+// Global rate limiting for public endpoints (100 req/min per IP)
+app.use('/api/v1/*', publicRateLimit);
 
 // ============================================================================
 // Health Check

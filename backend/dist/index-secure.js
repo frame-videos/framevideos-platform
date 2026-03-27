@@ -4031,7 +4031,9 @@ async function generateToken(user) {
   const payload = {
     sub: user.id,
     email: user.email,
+    role: user.role || "user",
     tenantId: user.tenantId,
+    isSuperAdmin: user.role === "super_admin",
     iat: Math.floor(Date.now() / 1e3),
     exp: Math.floor(Date.now() / 1e3) + 7 * 24 * 60 * 60
     // 7 days
@@ -4072,6 +4074,42 @@ async function verifyPassword(password, hash2) {
   return compare(password, hash2);
 }
 __name(verifyPassword, "verifyPassword");
+function validatePasswordStrength(password) {
+  const errors = [];
+  let strength = "weak";
+  if (password.length < 8) {
+    errors.push("Password must be at least 8 characters long");
+  }
+  if (!/[A-Z]/.test(password)) {
+    errors.push("Password must contain at least one uppercase letter");
+  }
+  if (!/[a-z]/.test(password)) {
+    errors.push("Password must contain at least one lowercase letter");
+  }
+  if (!/[0-9]/.test(password)) {
+    errors.push("Password must contain at least one number");
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    errors.push("Password must contain at least one special character");
+  }
+  const hasMinLength = password.length >= 8;
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasLowercase = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+  const criteriaCount = [hasMinLength, hasUppercase, hasLowercase, hasNumber, hasSpecial].filter(Boolean).length;
+  if (criteriaCount >= 5 && password.length >= 12) {
+    strength = "strong";
+  } else if (criteriaCount >= 4) {
+    strength = "medium";
+  }
+  return {
+    valid: errors.length === 0,
+    errors,
+    strength
+  };
+}
+__name(validatePasswordStrength, "validatePasswordStrength");
 
 // src/error-handler.ts
 var FrameVideosError = class extends Error {
@@ -4156,7 +4194,7 @@ function validateEmail(email) {
   }
 }
 __name(validateEmail, "validateEmail");
-function validatePasswordStrength(password) {
+function validatePasswordStrength2(password) {
   const checks = {
     hasMinLength: password.length >= 8,
     hasUppercase: /[A-Z]/.test(password),
@@ -4175,7 +4213,7 @@ function validatePasswordStrength(password) {
   }
   return { valid: true, strength, checks };
 }
-__name(validatePasswordStrength, "validatePasswordStrength");
+__name(validatePasswordStrength2, "validatePasswordStrength");
 function validateUUID(id, fieldName = "id") {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(id)) {
@@ -4284,37 +4322,404 @@ function asyncHandler(handler) {
 }
 __name(asyncHandler, "asyncHandler");
 
+// src/rate-limiter.ts
+var DEFAULT_RATE_LIMIT_CONFIG = {
+  maxAttempts: 5,
+  windowMs: 15 * 60 * 1e3,
+  // 15 minutes
+  blockDurationMs: 30 * 60 * 1e3
+  // 30 minutes
+};
+var D1RateLimiter = class {
+  static {
+    __name(this, "D1RateLimiter");
+  }
+  config;
+  constructor(config = DEFAULT_RATE_LIMIT_CONFIG) {
+    this.config = config;
+  }
+  /**
+   * Extract client IP from request
+   */
+  static getClientIP(request, headers) {
+    const forwarded = headers?.["x-forwarded-for"] || request.headers?.get("x-forwarded-for");
+    if (forwarded) {
+      return forwarded.split(",")[0].trim();
+    }
+    const realIp = headers?.["x-real-ip"] || request.headers?.get("x-real-ip");
+    if (realIp) {
+      return realIp.trim();
+    }
+    const cfIp = headers?.["cf-connecting-ip"] || request.headers?.get("cf-connecting-ip");
+    if (cfIp) {
+      return cfIp.trim();
+    }
+    return "0.0.0.0";
+  }
+  /**
+   * Check if an IP is rate limited and record attempt if not
+   */
+  async checkRateLimit(db, ipAddress) {
+    const now = /* @__PURE__ */ new Date();
+    const windowStart = new Date(now.getTime() - this.config.windowMs).toISOString();
+    const blocked = await db.prepare(`
+        SELECT blocked_until FROM login_attempts 
+        WHERE ip_address = ? AND blocked_until IS NOT NULL AND blocked_until > ?
+        ORDER BY attempted_at DESC LIMIT 1
+      `).bind(ipAddress, now.toISOString()).first();
+    if (blocked?.blocked_until) {
+      const retryAfterMs = new Date(blocked.blocked_until).getTime() - now.getTime();
+      return {
+        allowed: false,
+        remainingAttempts: 0,
+        retryAfterMs: Math.max(0, retryAfterMs),
+        totalAttempts: this.config.maxAttempts
+      };
+    }
+    const countResult = await db.prepare(`
+        SELECT COUNT(*) as count FROM login_attempts 
+        WHERE ip_address = ? AND attempted_at > ? AND success = 0
+      `).bind(ipAddress, windowStart).first();
+    const failedAttempts = countResult?.count || 0;
+    if (failedAttempts >= this.config.maxAttempts) {
+      return {
+        allowed: false,
+        remainingAttempts: 0,
+        retryAfterMs: this.config.blockDurationMs,
+        totalAttempts: failedAttempts
+      };
+    }
+    return {
+      allowed: true,
+      remainingAttempts: this.config.maxAttempts - failedAttempts,
+      retryAfterMs: 0,
+      totalAttempts: failedAttempts
+    };
+  }
+  /**
+   * Record a login attempt (success or failure)
+   */
+  async recordAttempt(db, ipAddress, email, success, userAgent) {
+    const now = /* @__PURE__ */ new Date();
+    const id = crypto.randomUUID();
+    const windowStart = new Date(now.getTime() - this.config.windowMs).toISOString();
+    let blockedUntil = null;
+    if (!success) {
+      const countResult = await db.prepare(`
+          SELECT COUNT(*) as count FROM login_attempts 
+          WHERE ip_address = ? AND attempted_at > ? AND success = 0
+        `).bind(ipAddress, windowStart).first();
+      const failedAttempts = (countResult?.count || 0) + 1;
+      if (failedAttempts >= this.config.maxAttempts) {
+        blockedUntil = new Date(now.getTime() + this.config.blockDurationMs).toISOString();
+      }
+    }
+    await db.prepare(`
+        INSERT INTO login_attempts (id, ip_address, email, attempted_at, success, user_agent, blocked_until)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(id, ipAddress, email, now.toISOString(), success ? 1 : 0, userAgent || null, blockedUntil).run();
+  }
+  /**
+   * Reset rate limit for IP (e.g., after successful login)
+   */
+  async resetForIP(db, ipAddress) {
+    await db.prepare(`
+        UPDATE login_attempts SET blocked_until = NULL 
+        WHERE ip_address = ? AND blocked_until IS NOT NULL
+      `).bind(ipAddress).run();
+  }
+  /**
+   * Clean up old entries (older than 24 hours)
+   */
+  async cleanup(db) {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1e3).toISOString();
+    await db.prepare("DELETE FROM login_attempts WHERE attempted_at < ? AND (blocked_until IS NULL OR blocked_until < ?)").bind(cutoff, (/* @__PURE__ */ new Date()).toISOString()).run();
+  }
+};
+var rateLimiter = new D1RateLimiter(DEFAULT_RATE_LIMIT_CONFIG);
+
+// src/account-lockout.ts
+var DEFAULT_LOCKOUT_CONFIG = {
+  maxFailedAttempts: 10,
+  lockoutDurationMs: 60 * 60 * 1e3,
+  // 1 hour
+  resetWindowMs: 30 * 60 * 1e3
+  // 30 minutes
+};
+var D1AccountLockout = class {
+  static {
+    __name(this, "D1AccountLockout");
+  }
+  config;
+  constructor(config = DEFAULT_LOCKOUT_CONFIG) {
+    this.config = config;
+  }
+  /**
+   * Check if an account is locked
+   */
+  async isLocked(db, userId) {
+    const now = /* @__PURE__ */ new Date();
+    const lockout = await db.prepare(`
+        SELECT * FROM account_lockouts 
+        WHERE user_id = ? 
+        ORDER BY updated_at DESC LIMIT 1
+      `).bind(userId).first();
+    if (!lockout) {
+      return {
+        locked: false,
+        failedAttempts: 0,
+        remainingAttempts: this.config.maxFailedAttempts,
+        lockedUntil: null,
+        timeUntilUnlockMs: 0
+      };
+    }
+    if (lockout.locked_until && new Date(lockout.locked_until) > now) {
+      const timeUntilUnlockMs = new Date(lockout.locked_until).getTime() - now.getTime();
+      return {
+        locked: true,
+        failedAttempts: lockout.failed_attempts,
+        remainingAttempts: 0,
+        lockedUntil: lockout.locked_until,
+        timeUntilUnlockMs: Math.max(0, timeUntilUnlockMs)
+      };
+    }
+    const lastFailed = new Date(lockout.last_failed_at);
+    if (now.getTime() - lastFailed.getTime() > this.config.resetWindowMs) {
+      await this.reset(db, userId);
+      return {
+        locked: false,
+        failedAttempts: 0,
+        remainingAttempts: this.config.maxFailedAttempts,
+        lockedUntil: null,
+        timeUntilUnlockMs: 0
+      };
+    }
+    if (lockout.locked_until && new Date(lockout.locked_until) <= now) {
+      await this.reset(db, userId);
+      return {
+        locked: false,
+        failedAttempts: 0,
+        remainingAttempts: this.config.maxFailedAttempts,
+        lockedUntil: null,
+        timeUntilUnlockMs: 0
+      };
+    }
+    return {
+      locked: false,
+      failedAttempts: lockout.failed_attempts,
+      remainingAttempts: Math.max(0, this.config.maxFailedAttempts - lockout.failed_attempts),
+      lockedUntil: null,
+      timeUntilUnlockMs: 0
+    };
+  }
+  /**
+   * Record a failed login attempt for an account
+   */
+  async recordFailedAttempt(db, userId, email) {
+    const now = /* @__PURE__ */ new Date();
+    const nowStr = now.toISOString();
+    const existing = await db.prepare(`
+        SELECT * FROM account_lockouts 
+        WHERE user_id = ? 
+        ORDER BY updated_at DESC LIMIT 1
+      `).bind(userId).first();
+    if (!existing) {
+      const id = crypto.randomUUID();
+      await db.prepare(`
+          INSERT INTO account_lockouts (id, user_id, email, failed_attempts, first_failed_at, last_failed_at, locked_until, created_at, updated_at)
+          VALUES (?, ?, ?, 1, ?, ?, NULL, ?, ?)
+        `).bind(id, userId, email, nowStr, nowStr, nowStr, nowStr).run();
+      return {
+        locked: false,
+        failedAttempts: 1,
+        remainingAttempts: this.config.maxFailedAttempts - 1,
+        lockedUntil: null,
+        timeUntilUnlockMs: 0
+      };
+    }
+    const lastFailed = new Date(existing.last_failed_at);
+    if (now.getTime() - lastFailed.getTime() > this.config.resetWindowMs) {
+      await db.prepare(`
+          UPDATE account_lockouts 
+          SET failed_attempts = 1, first_failed_at = ?, last_failed_at = ?, locked_until = NULL, updated_at = ?
+          WHERE id = ?
+        `).bind(nowStr, nowStr, nowStr, existing.id).run();
+      return {
+        locked: false,
+        failedAttempts: 1,
+        remainingAttempts: this.config.maxFailedAttempts - 1,
+        lockedUntil: null,
+        timeUntilUnlockMs: 0
+      };
+    }
+    const newAttempts = existing.failed_attempts + 1;
+    let lockedUntil = null;
+    if (newAttempts >= this.config.maxFailedAttempts) {
+      lockedUntil = new Date(now.getTime() + this.config.lockoutDurationMs).toISOString();
+    }
+    await db.prepare(`
+        UPDATE account_lockouts 
+        SET failed_attempts = ?, last_failed_at = ?, locked_until = ?, updated_at = ?
+        WHERE id = ?
+      `).bind(newAttempts, nowStr, lockedUntil, nowStr, existing.id).run();
+    if (lockedUntil) {
+      return {
+        locked: true,
+        failedAttempts: newAttempts,
+        remainingAttempts: 0,
+        lockedUntil,
+        timeUntilUnlockMs: this.config.lockoutDurationMs
+      };
+    }
+    return {
+      locked: false,
+      failedAttempts: newAttempts,
+      remainingAttempts: Math.max(0, this.config.maxFailedAttempts - newAttempts),
+      lockedUntil: null,
+      timeUntilUnlockMs: 0
+    };
+  }
+  /**
+   * Reset lockout for account (e.g., after successful login)
+   */
+  async reset(db, userId) {
+    await db.prepare("DELETE FROM account_lockouts WHERE user_id = ?").bind(userId).run();
+  }
+  /**
+   * Clean up expired lockouts
+   */
+  async cleanup(db) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1e3).toISOString();
+    await db.prepare(`
+        DELETE FROM account_lockouts 
+        WHERE (locked_until IS NOT NULL AND locked_until < ?) 
+        OR (locked_until IS NULL AND last_failed_at < ?)
+      `).bind(now, cutoff).run();
+  }
+};
+var accountLockout = new D1AccountLockout(DEFAULT_LOCKOUT_CONFIG);
+
+// src/security-audit.ts
+async function logSecurityEvent(db, event) {
+  try {
+    const id = crypto.randomUUID();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    await db.prepare(`
+        INSERT INTO security_audit_log (id, event_type, ip_address, email, user_id, details, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+      id,
+      event.eventType,
+      event.ipAddress || null,
+      event.email || null,
+      event.userId || null,
+      event.details ? JSON.stringify(event.details) : null,
+      now
+    ).run();
+    console.log(`[SECURITY_AUDIT] ${event.eventType}`, {
+      timestamp: now,
+      ip: event.ipAddress,
+      email: event.email,
+      userId: event.userId,
+      details: event.details
+    });
+  } catch (error) {
+    console.error("[SECURITY_AUDIT_ERROR] Failed to log event:", error);
+  }
+}
+__name(logSecurityEvent, "logSecurityEvent");
+
 // src/routes/auth-secure.ts
 var auth = new Hono2();
+function getRawDB(c) {
+  return c.env.DB;
+}
+__name(getRawDB, "getRawDB");
+function getClientIP(c) {
+  return c.req.header("cf-connecting-ip") || c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "0.0.0.0";
+}
+__name(getClientIP, "getClientIP");
 auth.post("/register", asyncHandler(async (c) => {
   const body = await c.req.json();
-  const { email, password, tenantId } = body;
-  const db2 = c.get("db");
-  validateRequired(body, ["email", "password", "tenantId"]);
+  const { email, password, name } = body;
+  let { tenantId } = body;
+  const db = c.get("db");
+  const rawDB = getRawDB(c);
+  const clientIP = getClientIP(c);
+  const userAgent = c.req.header("user-agent") || "";
+  validateRequired(body, ["email", "password"]);
   validateEmail(email);
-  validatePasswordStrength(password);
-  const tenant = await withRetry(() => db2.getTenantById(tenantId));
-  if (!tenant) {
-    throw new ValidationError("Invalid tenant ID", { tenantId });
+  const passwordResult = validatePasswordStrength(password);
+  if (!passwordResult.valid) {
+    await logSecurityEvent(rawDB, {
+      eventType: "PASSWORD_WEAK" /* PASSWORD_WEAK */,
+      ipAddress: clientIP,
+      email,
+      details: { errors: passwordResult.errors, strength: passwordResult.strength }
+    });
+    throw new ValidationError("Password does not meet strength requirements", {
+      errors: passwordResult.errors,
+      strength: passwordResult.strength
+    });
   }
-  const existingUser = await withRetry(() => db2.getUserByEmail(email));
-  if (existingUser) {
+  validatePasswordStrength2(password);
+  const existingUserCheck = await withRetry(() => db.getUserByEmail(email));
+  if (existingUserCheck) {
+    await logSecurityEvent(rawDB, {
+      eventType: "REGISTER_FAILED" /* REGISTER_FAILED */,
+      ipAddress: clientIP,
+      email,
+      details: { reason: "duplicate_email" }
+    });
     throw new ConflictError("User already exists", { email });
   }
+  let tenant;
+  if (tenantId) {
+    tenant = await withRetry(() => db.getTenantById(tenantId));
+    if (!tenant) {
+      throw new ValidationError("Invalid tenant ID", { tenantId });
+    }
+  } else {
+    const emailPrefix = email.split("@")[0];
+    const uniqueDomain = `${emailPrefix}-${crypto.randomUUID().slice(0, 8)}.framevideos.com`;
+    const tenantName = name || emailPrefix;
+    tenant = {
+      id: crypto.randomUUID(),
+      name: tenantName,
+      domain: uniqueDomain,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    await withRetry(() => db.createTenant(tenant));
+    tenantId = tenant.id;
+  }
+  const origin = c.req.header("origin") || "";
+  const referer = c.req.header("referer") || "";
+  const isFrameVideosDomain = origin.includes("framevideos.com") || referer.includes("framevideos.com");
+  const userRole = isFrameVideosDomain ? "admin" : "user";
   const user = {
     id: crypto.randomUUID(),
     email,
     password: await hashPassword(password),
+    role: userRole,
     tenantId,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await withRetry(() => db2.createUser(user));
+  await withRetry(() => db.createUser(user));
   const token = await generateToken(user);
+  await logSecurityEvent(rawDB, {
+    eventType: "REGISTER_SUCCESS" /* REGISTER_SUCCESS */,
+    ipAddress: clientIP,
+    email: user.email,
+    userId: user.id,
+    details: { tenantId: user.tenantId }
+  });
   console.log("[USER_REGISTERED]", {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     userId: user.id,
     email: user.email,
-    tenantId: user.tenantId
+    tenantId: user.tenantId,
+    ip: clientIP
   });
   return c.json({
     message: "User created successfully",
@@ -4329,27 +4734,137 @@ auth.post("/register", asyncHandler(async (c) => {
 auth.post("/login", asyncHandler(async (c) => {
   const body = await c.req.json();
   const { email, password } = body;
-  const db2 = c.get("db");
+  const db = c.get("db");
+  const rawDB = getRawDB(c);
+  const clientIP = getClientIP(c);
+  const userAgent = c.req.header("user-agent") || "";
   validateRequired(body, ["email", "password"]);
-  const user = await withRetry(() => db2.getUserByEmail(email));
-  if (!user) {
-    throw new AuthenticationError("Invalid credentials");
-  }
-  const isValid = await verifyPassword(password, user.password);
-  if (!isValid) {
-    console.warn("[LOGIN_FAILED]", {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+  const rateResult = await rateLimiter.checkRateLimit(rawDB, clientIP);
+  if (!rateResult.allowed) {
+    const retryAfterSeconds = Math.ceil(rateResult.retryAfterMs / 1e3);
+    await logSecurityEvent(rawDB, {
+      eventType: "LOGIN_RATE_LIMITED" /* LOGIN_RATE_LIMITED */,
+      ipAddress: clientIP,
       email,
-      tenantId: user.tenantId
+      details: {
+        totalAttempts: rateResult.totalAttempts,
+        retryAfterSeconds
+      }
+    });
+    console.warn("[RATE_LIMITED]", {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      ip: clientIP,
+      email,
+      retryAfterSeconds
+    });
+    c.header("Retry-After", String(retryAfterSeconds));
+    return c.json({
+      error: {
+        message: "Too many login attempts. Please try again later.",
+        code: 429,
+        category: "RATE_LIMIT",
+        retryAfterSeconds,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    }, 429);
+  }
+  const user = await withRetry(() => db.getUserByEmail(email));
+  if (!user) {
+    await rateLimiter.recordAttempt(rawDB, clientIP, email, false, userAgent);
+    await logSecurityEvent(rawDB, {
+      eventType: "LOGIN_FAILED" /* LOGIN_FAILED */,
+      ipAddress: clientIP,
+      email,
+      details: { reason: "user_not_found" }
     });
     throw new AuthenticationError("Invalid credentials");
   }
+  const lockoutResult = await accountLockout.isLocked(rawDB, user.id);
+  if (lockoutResult.locked) {
+    const unlockTimeMs = lockoutResult.timeUntilUnlockMs;
+    const unlockTimeMinutes = Math.ceil(unlockTimeMs / 6e4);
+    await logSecurityEvent(rawDB, {
+      eventType: "ACCOUNT_LOCKED" /* ACCOUNT_LOCKED */,
+      ipAddress: clientIP,
+      email,
+      userId: user.id,
+      details: {
+        failedAttempts: lockoutResult.failedAttempts,
+        lockedUntil: lockoutResult.lockedUntil,
+        unlockTimeMinutes
+      }
+    });
+    console.warn("[ACCOUNT_LOCKED]", {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      userId: user.id,
+      email,
+      lockedUntil: lockoutResult.lockedUntil
+    });
+    return c.json({
+      error: {
+        message: "Account is temporarily locked due to too many failed login attempts.",
+        code: 423,
+        category: "ACCOUNT_LOCKED",
+        lockedUntil: lockoutResult.lockedUntil,
+        unlockTimeMinutes,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    }, 423);
+  }
+  const isValid = await verifyPassword(password, user.password);
+  if (!isValid) {
+    await rateLimiter.recordAttempt(rawDB, clientIP, email, false, userAgent);
+    const lockResult = await accountLockout.recordFailedAttempt(rawDB, user.id, email);
+    await logSecurityEvent(rawDB, {
+      eventType: "LOGIN_FAILED" /* LOGIN_FAILED */,
+      ipAddress: clientIP,
+      email,
+      userId: user.id,
+      details: {
+        reason: "invalid_password",
+        failedAttempts: lockResult.failedAttempts,
+        remainingAttempts: lockResult.remainingAttempts,
+        accountLocked: lockResult.locked
+      }
+    });
+    console.warn("[LOGIN_FAILED]", {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      email,
+      ip: clientIP,
+      failedAttempts: lockResult.failedAttempts,
+      accountLocked: lockResult.locked
+    });
+    if (lockResult.locked) {
+      return c.json({
+        error: {
+          message: "Account is temporarily locked due to too many failed login attempts.",
+          code: 423,
+          category: "ACCOUNT_LOCKED",
+          lockedUntil: lockResult.lockedUntil,
+          unlockTimeMinutes: Math.ceil(lockResult.timeUntilUnlockMs / 6e4),
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        }
+      }, 423);
+    }
+    throw new AuthenticationError("Invalid credentials");
+  }
+  await rateLimiter.recordAttempt(rawDB, clientIP, email, true, userAgent);
+  await rateLimiter.resetForIP(rawDB, clientIP);
+  await accountLockout.reset(rawDB, user.id);
   const token = await generateToken(user);
+  await logSecurityEvent(rawDB, {
+    eventType: "LOGIN_SUCCESS" /* LOGIN_SUCCESS */,
+    ipAddress: clientIP,
+    email: user.email,
+    userId: user.id,
+    details: { tenantId: user.tenantId }
+  });
   console.log("[USER_LOGIN]", {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     userId: user.id,
     email: user.email,
-    tenantId: user.tenantId
+    tenantId: user.tenantId,
+    ip: clientIP
   });
   return c.json({
     message: "Login successful",
@@ -4370,24 +4885,31 @@ auth.post("/password-strength", asyncHandler(async (c) => {
     hasUppercase: /[A-Z]/.test(password),
     hasLowercase: /[a-z]/.test(password),
     hasNumber: /\d/.test(password),
-    hasSpecial: /[!@#$%^&*(),.?":{}|<>]/.test(password)
+    hasSpecial: /[!@#$%^&*(),.?":{}|<>_+\-=\[\]{};':\\|]/.test(password)
   };
   const passedChecks = Object.values(checks).filter(Boolean).length;
   let strength = "weak";
-  if (passedChecks === 5) {
+  if (passedChecks === 5 && password.length >= 12) {
     strength = "strong";
-  } else if (passedChecks >= 3) {
+  } else if (passedChecks >= 4) {
     strength = "medium";
   }
+  const errors = [];
+  if (!checks.minLength) errors.push("Password must be at least 8 characters");
+  if (!checks.hasUppercase) errors.push("Password must contain an uppercase letter");
+  if (!checks.hasLowercase) errors.push("Password must contain a lowercase letter");
+  if (!checks.hasNumber) errors.push("Password must contain a number");
+  if (!checks.hasSpecial) errors.push("Password must contain a special character");
   return c.json({
+    valid: errors.length === 0,
     strength,
     checks,
-    valid: strength !== "weak"
+    errors
   });
 }));
 auth.get("/me", asyncHandler(async (c) => {
   const token = extractToken(c.req.header("Authorization"));
-  const db2 = c.get("db");
+  const db = c.get("db");
   if (!token) {
     throw new AuthenticationError("Authentication required");
   }
@@ -4395,23 +4917,58 @@ auth.get("/me", asyncHandler(async (c) => {
   if (!payload) {
     throw new AuthenticationError("Invalid or expired token");
   }
-  const user = await withRetry(() => db2.getUserById(payload.sub));
+  const user = await withRetry(() => db.getUserById(payload.sub));
   if (!user) {
-    throw new NotFoundError("User", { userId: payload.sub });
+    throw new NotFoundError("User", payload.sub);
   }
-  const tenant = await withRetry(() => db2.getTenantById(user.tenantId));
+  const tenant = await withRetry(() => db.getTenantById(user.tenantId));
   if (!tenant) {
-    throw new NotFoundError("Tenant", { tenantId: user.tenantId });
+    throw new NotFoundError("Tenant", user.tenantId);
   }
   return c.json({
     id: user.id,
     email: user.email,
+    role: user.role,
     tenantId: user.tenantId,
     tenant: {
       id: tenant.id,
       name: tenant.name,
       domain: tenant.domain
     }
+  });
+}));
+auth.get("/security-status", asyncHandler(async (c) => {
+  const token = extractToken(c.req.header("Authorization"));
+  if (!token) {
+    throw new AuthenticationError("Authentication required");
+  }
+  const payload = await verifyToken(token);
+  if (!payload) {
+    throw new AuthenticationError("Invalid or expired token");
+  }
+  const rawDB = getRawDB(c);
+  const recentEvents = await rawDB.prepare(`
+      SELECT event_type, COUNT(*) as count 
+      FROM security_audit_log 
+      WHERE created_at > datetime('now', '-24 hours')
+      GROUP BY event_type
+      ORDER BY count DESC
+    `).all();
+  const blockedIPs = await rawDB.prepare(`
+      SELECT DISTINCT ip_address, blocked_until 
+      FROM login_attempts 
+      WHERE blocked_until IS NOT NULL AND blocked_until > datetime('now')
+    `).all();
+  const lockedAccounts = await rawDB.prepare(`
+      SELECT email, locked_until, failed_attempts 
+      FROM account_lockouts 
+      WHERE locked_until IS NOT NULL AND locked_until > datetime('now')
+    `).all();
+  return c.json({
+    recentEvents: recentEvents.results || [],
+    blockedIPs: blockedIPs.results || [],
+    lockedAccounts: lockedAccounts.results || [],
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 }));
 var auth_secure_default = auth;
@@ -4699,29 +5256,29 @@ var analyticsDb = new AnalyticsDatabase();
 var videos = new Hono2();
 videos.use("*", tenantIsolation);
 videos.get("/", asyncHandler(async (c) => {
-  const db2 = c.get("db");
+  const db = c.get("db");
   const { tenantId } = getTenantContext(c);
-  const tenantVideos = await withRetry(() => db2.getVideosByTenant(tenantId));
+  const tenantVideos = await withRetry(() => db.getVideosByTenant(tenantId));
   return c.json({
     videos: tenantVideos,
     total: tenantVideos.length
   });
 }));
 videos.get("/:id", asyncHandler(async (c) => {
-  const db2 = c.get("db");
+  const db = c.get("db");
   const id = c.req.param("id");
   const { tenantId } = getTenantContext(c);
   validateUUID(id, "videoId");
-  const video = await withRetry(() => db2.getVideoById(id, tenantId));
+  const video = await withRetry(() => db.getVideoById(id, tenantId));
   if (!video) {
     throw new NotFoundError("Video", { videoId: id, tenantId });
   }
-  await withRetry(() => db2.incrementVideoViews(id, tenantId));
+  await withRetry(() => db.incrementVideoViews(id, tenantId));
   await withRetry(() => analyticsDb.incrementViews(id, tenantId));
   return c.json(video);
 }));
 videos.post("/", asyncHandler(async (c) => {
-  const db2 = c.get("db");
+  const db = c.get("db");
   const { tenantId, userId } = getTenantContext(c);
   const body = await c.req.json();
   const { title, description, url, thumbnailUrl, duration } = body;
@@ -4738,7 +5295,7 @@ videos.post("/", asyncHandler(async (c) => {
     views: 0,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await withRetry(() => db2.createVideo(video, tenantId));
+  await withRetry(() => db.createVideo(video, tenantId));
   console.log("[VIDEO_CREATED]", {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     videoId: video.id,
@@ -4751,17 +5308,17 @@ videos.post("/", asyncHandler(async (c) => {
   }, 201);
 }));
 videos.put("/:id", asyncHandler(async (c) => {
-  const db2 = c.get("db");
+  const db = c.get("db");
   const id = c.req.param("id");
   const { tenantId, userId } = getTenantContext(c);
   validateUUID(id, "videoId");
-  const video = await withRetry(() => db2.getVideoById(id, tenantId));
+  const video = await withRetry(() => db.getVideoById(id, tenantId));
   if (!video) {
     throw new NotFoundError("Video", { videoId: id, tenantId });
   }
   validateTenantOwnership(c, video.tenantId);
   const updates = await c.req.json();
-  const updated = await withRetry(() => db2.updateVideo(id, updates, tenantId));
+  const updated = await withRetry(() => db.updateVideo(id, updates, tenantId));
   console.log("[VIDEO_UPDATED]", {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     videoId: id,
@@ -4775,16 +5332,16 @@ videos.put("/:id", asyncHandler(async (c) => {
   });
 }));
 videos.delete("/:id", asyncHandler(async (c) => {
-  const db2 = c.get("db");
+  const db = c.get("db");
   const id = c.req.param("id");
   const { tenantId, userId } = getTenantContext(c);
   validateUUID(id, "videoId");
-  const video = await withRetry(() => db2.getVideoById(id, tenantId));
+  const video = await withRetry(() => db.getVideoById(id, tenantId));
   if (!video) {
     throw new NotFoundError("Video", { videoId: id, tenantId });
   }
   validateTenantOwnership(c, video.tenantId);
-  await withRetry(() => db2.deleteVideo(id, tenantId));
+  await withRetry(() => db.deleteVideo(id, tenantId));
   console.log("[VIDEO_DELETED]", {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     videoId: id,
@@ -4795,16 +5352,318 @@ videos.delete("/:id", asyncHandler(async (c) => {
     message: "Video deleted successfully"
   });
 }));
+videos.post("/:id/categories", asyncHandler(async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
+  const { tenantId } = getTenantContext(c);
+  validateUUID(id, "videoId");
+  const video = await withRetry(() => db.getVideoById(id, tenantId));
+  if (!video) {
+    throw new NotFoundError("Video", { videoId: id });
+  }
+  const body = await c.req.json();
+  const { categoryIds } = body;
+  if (!categoryIds || !Array.isArray(categoryIds)) {
+    throw new ValidationError("categoryIds must be an array");
+  }
+  await withRetry(() => db.setVideoCategories(id, categoryIds));
+  const categories2 = await withRetry(() => db.getVideoCategories(id));
+  return c.json({
+    message: "Video categories updated",
+    categories: categories2
+  });
+}));
+videos.delete("/:id/categories/:catId", asyncHandler(async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
+  const catId = c.req.param("catId");
+  const { tenantId } = getTenantContext(c);
+  validateUUID(id, "videoId");
+  validateUUID(catId, "categoryId");
+  const video = await withRetry(() => db.getVideoById(id, tenantId));
+  if (!video) {
+    throw new NotFoundError("Video", { videoId: id });
+  }
+  await withRetry(() => db.removeVideoCategory(id, catId));
+  return c.json({ message: "Category removed from video" });
+}));
+videos.get("/:id/categories", asyncHandler(async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
+  const { tenantId } = getTenantContext(c);
+  validateUUID(id, "videoId");
+  const video = await withRetry(() => db.getVideoById(id, tenantId));
+  if (!video) {
+    throw new NotFoundError("Video", { videoId: id });
+  }
+  const categories2 = await withRetry(() => db.getVideoCategories(id));
+  return c.json({ categories: categories2 });
+}));
+videos.post("/:id/tags", asyncHandler(async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
+  const { tenantId } = getTenantContext(c);
+  validateUUID(id, "videoId");
+  const video = await withRetry(() => db.getVideoById(id, tenantId));
+  if (!video) {
+    throw new NotFoundError("Video", { videoId: id });
+  }
+  const body = await c.req.json();
+  const { tagIds } = body;
+  if (!tagIds || !Array.isArray(tagIds)) {
+    throw new ValidationError("tagIds must be an array");
+  }
+  await withRetry(() => db.setVideoTags(id, tagIds));
+  const videoTags = await withRetry(() => db.getVideoTags(id));
+  return c.json({
+    message: "Video tags updated",
+    tags: videoTags
+  });
+}));
+videos.delete("/:id/tags/:tagId", asyncHandler(async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
+  const tagId = c.req.param("tagId");
+  const { tenantId } = getTenantContext(c);
+  validateUUID(id, "videoId");
+  validateUUID(tagId, "tagId");
+  const video = await withRetry(() => db.getVideoById(id, tenantId));
+  if (!video) {
+    throw new NotFoundError("Video", { videoId: id });
+  }
+  await withRetry(() => db.removeVideoTag(id, tagId));
+  return c.json({ message: "Tag removed from video" });
+}));
+videos.get("/:id/tags", asyncHandler(async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
+  const { tenantId } = getTenantContext(c);
+  validateUUID(id, "videoId");
+  const video = await withRetry(() => db.getVideoById(id, tenantId));
+  if (!video) {
+    throw new NotFoundError("Video", { videoId: id });
+  }
+  const videoTags = await withRetry(() => db.getVideoTags(id));
+  return c.json({ tags: videoTags });
+}));
 var videos_secure_default = videos;
+
+// src/routes/videos-upload.ts
+var upload = new Hono2();
+upload.use("*", tenantIsolation);
+upload.post("/", asyncHandler(async (c) => {
+  const db = c.get("db");
+  const { tenantId, userId } = getTenantContext(c);
+  const formData = await c.req.formData();
+  const videoFile = formData.get("video");
+  const title = formData.get("title");
+  const description = formData.get("description") || "";
+  const category = formData.get("category") || "";
+  const tags2 = formData.get("tags") || "";
+  if (!videoFile) {
+    throw new ValidationError("Video file is required");
+  }
+  if (!title || !title.trim()) {
+    throw new ValidationError("Title is required");
+  }
+  const validTypes = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/x-matroska"];
+  if (!validTypes.includes(videoFile.type)) {
+    throw new ValidationError("Invalid video format. Accepted: mp4, mov, avi, mkv");
+  }
+  const maxSize = 500 * 1024 * 1024;
+  if (videoFile.size > maxSize) {
+    throw new ValidationError("Video file too large. Maximum: 500MB");
+  }
+  const videoId = crypto.randomUUID();
+  const key = `videos/${tenantId}/${videoId}/video.mp4`;
+  try {
+    const arrayBuffer = await videoFile.arrayBuffer();
+    await c.env.STORAGE.put(key, arrayBuffer, {
+      httpMetadata: {
+        contentType: videoFile.type
+      },
+      customMetadata: {
+        tenantId,
+        userId,
+        originalName: videoFile.name,
+        uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    });
+    const videoUrl = `https://pub-frame-videos.r2.dev/${key}`;
+    const video = {
+      id: videoId,
+      userId,
+      tenantId,
+      title: title.trim(),
+      description: description.trim(),
+      status: "active",
+      url: videoUrl,
+      thumbnailUrl: "",
+      duration: 0,
+      views: 0,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    await withRetry(() => db.createVideo(video));
+    if (tags2 && tags2.trim()) {
+      const tagList = tags2.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+      for (const tagName of tagList) {
+        const tagId = crypto.randomUUID();
+        try {
+          await db.createTag({ id: tagId, name: tagName, tenantId }, tenantId);
+        } catch (err) {
+        }
+        try {
+          await db.addVideoTag(videoId, tagId, tenantId);
+        } catch (err) {
+          console.warn("Failed to add tag:", err);
+        }
+      }
+    }
+    console.log("[VIDEO_UPLOADED]", {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      videoId,
+      tenantId,
+      userId,
+      size: videoFile.size,
+      title
+    });
+    return c.json({
+      message: "Video uploaded successfully",
+      video,
+      storage: {
+        key,
+        size: videoFile.size,
+        url: videoUrl
+      }
+    }, 201);
+  } catch (error) {
+    console.error("[UPLOAD_ERROR]", {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      videoId,
+      tenantId,
+      userId,
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+    throw new StorageError("Failed to upload video to storage", {
+      videoId,
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+}));
+upload.post("/:id/thumbnail", asyncHandler(async (c) => {
+  const db = c.get("db");
+  const videoId = c.req.param("id");
+  const { tenantId, userId } = getTenantContext(c);
+  validateUUID(videoId, "videoId");
+  const video = await withRetry(() => db.getVideoById(videoId, tenantId));
+  if (!video) {
+    throw new ValidationError("Video not found or access denied");
+  }
+  const formData = await c.req.formData();
+  const thumbnailFile = formData.get("thumbnail");
+  if (!thumbnailFile) {
+    throw new ValidationError("Thumbnail file is required");
+  }
+  const validTypes = ["image/jpeg", "image/png", "image/webp"];
+  if (!validTypes.includes(thumbnailFile.type)) {
+    throw new ValidationError("Invalid thumbnail format. Accepted: jpg, png, webp");
+  }
+  const key = `videos/${tenantId}/${videoId}/thumbnail.jpg`;
+  try {
+    const arrayBuffer = await thumbnailFile.arrayBuffer();
+    await c.env.STORAGE.put(key, arrayBuffer, {
+      httpMetadata: {
+        contentType: thumbnailFile.type
+      },
+      customMetadata: {
+        tenantId,
+        userId,
+        uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    });
+    const thumbnailUrl = `https://pub-frame-videos.r2.dev/${key}`;
+    await withRetry(() => db.updateVideo(videoId, { thumbnailUrl }, tenantId));
+    console.log("[THUMBNAIL_UPLOADED]", {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      videoId,
+      tenantId,
+      userId
+    });
+    return c.json({
+      message: "Thumbnail uploaded successfully",
+      thumbnailUrl
+    });
+  } catch (error) {
+    console.error("[THUMBNAIL_UPLOAD_ERROR]", {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      videoId,
+      tenantId,
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+    throw new StorageError("Failed to upload thumbnail", {
+      videoId,
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+}));
+upload.post("/:id/auto-thumbnail", asyncHandler(async (c) => {
+  const db = c.get("db");
+  const videoId = c.req.param("id");
+  const { tenantId, userId } = getTenantContext(c);
+  validateUUID(videoId, "videoId");
+  const video = await withRetry(() => db.getVideoById(videoId, tenantId));
+  if (!video) {
+    throw new ValidationError("Video not found or access denied");
+  }
+  return c.json({
+    message: "Auto-thumbnail generation not yet implemented",
+    note: "This feature requires video processing capabilities",
+    videoId
+  });
+}));
+var videos_upload_default = upload;
+
+// src/middleware/auth.ts
+async function authenticate(c, next) {
+  const token = extractToken(c.req.header("Authorization"));
+  if (!token) {
+    throw new AuthenticationError("Authentication required");
+  }
+  const payload = await verifyToken(token);
+  if (!payload) {
+    throw new AuthenticationError("Invalid or expired token");
+  }
+  c.set("user", payload);
+  await next();
+}
+__name(authenticate, "authenticate");
+async function requireSuperAdmin(c, next) {
+  const user = c.get("user");
+  if (!user) {
+    throw new AuthenticationError("Authentication required");
+  }
+  if (user.role !== "super_admin") {
+    throw new AuthorizationError(
+      "Super admin access required",
+      {
+        requiredRole: "super_admin",
+        userRole: user.role
+      }
+    );
+  }
+  await next();
+}
+__name(requireSuperAdmin, "requireSuperAdmin");
 
 // src/routes/tenants.ts
 var tenants = new Hono2();
+tenants.use("*", authenticate, requireSuperAdmin);
 tenants.post("/", asyncHandler(async (c) => {
   const body = await c.req.json();
   const { name, domain } = body;
-  const db2 = c.get("db");
+  const db = c.get("db");
   validateRequired(body, ["name", "domain"]);
-  const existingTenant = await withRetry(() => db2.getTenantByDomain(domain));
+  const existingTenant = await withRetry(() => db.getTenantByDomain(domain));
   if (existingTenant) {
     throw new ConflictError("Domain already exists", { domain });
   }
@@ -4814,7 +5673,7 @@ tenants.post("/", asyncHandler(async (c) => {
     domain,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await withRetry(() => db2.createTenant(tenant));
+  await withRetry(() => db.createTenant(tenant));
   console.log("[TENANT_CREATED]", {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     tenantId: tenant.id,
@@ -4828,8 +5687,8 @@ tenants.post("/", asyncHandler(async (c) => {
 }));
 tenants.get("/domain/:domain", asyncHandler(async (c) => {
   const domain = c.req.param("domain");
-  const db2 = c.get("db");
-  const tenant = await withRetry(() => db2.getTenantByDomain(domain));
+  const db = c.get("db");
+  const tenant = await withRetry(() => db.getTenantByDomain(domain));
   if (!tenant) {
     throw new NotFoundError("Tenant", { domain });
   }
@@ -4837,9 +5696,9 @@ tenants.get("/domain/:domain", asyncHandler(async (c) => {
 }));
 tenants.get("/:id", asyncHandler(async (c) => {
   const id = c.req.param("id");
-  const db2 = c.get("db");
+  const db = c.get("db");
   validateUUID(id, "tenantId");
-  const tenant = await withRetry(() => db2.getTenantById(id));
+  const tenant = await withRetry(() => db.getTenantById(id));
   if (!tenant) {
     throw new NotFoundError("Tenant", { tenantId: id });
   }
@@ -5103,7 +5962,7 @@ var secureDb = new SecureDatabase();
 
 // src/routes/storage.ts
 var storage = new Hono2();
-async function authenticate(c, next) {
+async function authenticate2(c, next) {
   const token = extractToken(c.req.header("Authorization"));
   if (!token) {
     throw new AuthenticationError("Authentication required");
@@ -5115,8 +5974,8 @@ async function authenticate(c, next) {
   c.set("user", payload);
   await next();
 }
-__name(authenticate, "authenticate");
-storage.post("/upload-url", authenticate, asyncHandler(async (c) => {
+__name(authenticate2, "authenticate");
+storage.post("/upload-url", authenticate2, asyncHandler(async (c) => {
   const user = c.get("user");
   const body = await c.req.json();
   const { videoId, contentType, expiresIn } = body;
@@ -5139,7 +5998,7 @@ storage.post("/upload-url", authenticate, asyncHandler(async (c) => {
     expiresIn: expiresIn || 3600
   });
 }));
-storage.post("/upload", authenticate, asyncHandler(async (c) => {
+storage.post("/upload", authenticate2, asyncHandler(async (c) => {
   const user = c.get("user");
   const formData = await c.req.formData();
   const file = formData.get("file");
@@ -5195,7 +6054,7 @@ storage.post("/upload", authenticate, asyncHandler(async (c) => {
     }
   }, 201);
 }));
-storage.post("/thumbnail/:videoId", authenticate, asyncHandler(async (c) => {
+storage.post("/thumbnail/:videoId", authenticate2, asyncHandler(async (c) => {
   const user = c.get("user");
   const videoId = c.req.param("videoId");
   const formData = await c.req.formData();
@@ -5234,7 +6093,7 @@ storage.post("/thumbnail/:videoId", authenticate, asyncHandler(async (c) => {
     thumbnail: uploadResult
   });
 }));
-storage.get("/signed-url/:videoId", authenticate, asyncHandler(async (c) => {
+storage.get("/signed-url/:videoId", authenticate2, asyncHandler(async (c) => {
   const user = c.get("user");
   const videoId = c.req.param("videoId");
   const expiresIn = parseInt(c.req.query("expiresIn") || "3600");
@@ -5258,7 +6117,7 @@ storage.get("/signed-url/:videoId", authenticate, asyncHandler(async (c) => {
     expiresAt: new Date(Date.now() + expiresIn * 1e3).toISOString()
   });
 }));
-storage.get("/download/:videoId", authenticate, asyncHandler(async (c) => {
+storage.get("/download/:videoId", authenticate2, asyncHandler(async (c) => {
   const user = c.get("user");
   const videoId = c.req.param("videoId");
   validateUUID(videoId, "videoId");
@@ -5286,7 +6145,7 @@ storage.get("/download/:videoId", authenticate, asyncHandler(async (c) => {
     }
   });
 }));
-storage.get("/stream/:videoId", authenticate, asyncHandler(async (c) => {
+storage.get("/stream/:videoId", authenticate2, asyncHandler(async (c) => {
   const user = c.get("user");
   const videoId = c.req.param("videoId");
   validateUUID(videoId, "videoId");
@@ -5340,7 +6199,7 @@ storage.get("/stream/:videoId", authenticate, asyncHandler(async (c) => {
     }
   });
 }));
-storage.delete("/:videoId", authenticate, asyncHandler(async (c) => {
+storage.delete("/:videoId", authenticate2, asyncHandler(async (c) => {
   const user = c.get("user");
   const videoId = c.req.param("videoId");
   validateUUID(videoId, "videoId");
@@ -5371,7 +6230,7 @@ var storage_default = storage;
 
 // src/routes/categories.ts
 var categories = new Hono2();
-async function authenticate2(c, next) {
+async function authenticate3(c, next) {
   const token = extractToken(c.req.header("Authorization"));
   if (!token) {
     throw new AuthenticationError("Authentication required");
@@ -5383,21 +6242,31 @@ async function authenticate2(c, next) {
   c.set("user", payload);
   await next();
 }
-__name(authenticate2, "authenticate");
+__name(authenticate3, "authenticate");
 function generateSlug(name) {
   return name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 __name(generateSlug, "generateSlug");
-categories.get("/", authenticate2, asyncHandler(async (c) => {
+categories.get("/", authenticate3, asyncHandler(async (c) => {
   const user = c.get("user");
+  const db = c.get("db");
   const tenantCategories = await withRetry(() => db.getCategoriesByTenant(user.tenantId));
   return c.json({
     categories: tenantCategories,
     total: tenantCategories.length
   });
 }));
-categories.get("/:id", authenticate2, asyncHandler(async (c) => {
+categories.get("/:id", authenticate3, asyncHandler(async (c) => {
   const id = c.req.param("id");
+  const db = c.get("db");
+  if (id.includes("-") && !id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-/)) {
+    const user2 = c.get("user");
+    const category2 = await withRetry(() => db.getCategoryBySlug(user2.tenantId, id));
+    if (!category2) {
+      throw new NotFoundError("Category", { slug: id });
+    }
+    return c.json(category2);
+  }
   validateUUID(id, "categoryId");
   const category = await withRetry(() => db.getCategoryById(id));
   if (!category) {
@@ -5409,17 +6278,9 @@ categories.get("/:id", authenticate2, asyncHandler(async (c) => {
   }
   return c.json(category);
 }));
-categories.get("/slug/:slug", authenticate2, asyncHandler(async (c) => {
-  const slug = c.req.param("slug");
+categories.post("/", authenticate3, asyncHandler(async (c) => {
   const user = c.get("user");
-  const category = await withRetry(() => db.getCategoryBySlug(user.tenantId, slug));
-  if (!category) {
-    throw new NotFoundError("Category", { slug });
-  }
-  return c.json(category);
-}));
-categories.post("/", authenticate2, asyncHandler(async (c) => {
-  const user = c.get("user");
+  const db = c.get("db");
   const body = await c.req.json();
   const { name, description } = body;
   validateRequired(body, ["name"]);
@@ -5441,7 +6302,6 @@ categories.post("/", authenticate2, asyncHandler(async (c) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     categoryId: category.id,
     tenantId: user.tenantId,
-    userId: user.userId,
     name
   });
   return c.json({
@@ -5449,9 +6309,10 @@ categories.post("/", authenticate2, asyncHandler(async (c) => {
     category
   }, 201);
 }));
-categories.put("/:id", authenticate2, asyncHandler(async (c) => {
+categories.put("/:id", authenticate3, asyncHandler(async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
+  const db = c.get("db");
   validateUUID(id, "categoryId");
   const category = await withRetry(() => db.getCategoryById(id));
   if (!category) {
@@ -5473,7 +6334,6 @@ categories.put("/:id", authenticate2, asyncHandler(async (c) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     categoryId: id,
     tenantId: user.tenantId,
-    userId: user.userId,
     updates: Object.keys(updates)
   });
   return c.json({
@@ -5481,9 +6341,10 @@ categories.put("/:id", authenticate2, asyncHandler(async (c) => {
     category: updated
   });
 }));
-categories.delete("/:id", authenticate2, asyncHandler(async (c) => {
+categories.delete("/:id", authenticate3, asyncHandler(async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
+  const db = c.get("db");
   validateUUID(id, "categoryId");
   const category = await withRetry(() => db.getCategoryById(id));
   if (!category) {
@@ -5496,16 +6357,16 @@ categories.delete("/:id", authenticate2, asyncHandler(async (c) => {
   console.log("[CATEGORY_DELETED]", {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     categoryId: id,
-    tenantId: user.tenantId,
-    userId: user.userId
+    tenantId: user.tenantId
   });
   return c.json({
     message: "Category deleted successfully"
   });
 }));
-categories.get("/:id/videos", authenticate2, asyncHandler(async (c) => {
+categories.get("/:id/videos", authenticate3, asyncHandler(async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
+  const db = c.get("db");
   validateUUID(id, "categoryId");
   const category = await withRetry(() => db.getCategoryById(id));
   if (!category) {
@@ -5525,7 +6386,7 @@ var categories_default = categories;
 
 // src/routes/tags.ts
 var tags = new Hono2();
-async function authenticate3(c, next) {
+async function authenticate4(c, next) {
   const token = extractToken(c.req.header("Authorization"));
   if (!token) {
     throw new AuthenticationError("Authentication required");
@@ -5537,21 +6398,60 @@ async function authenticate3(c, next) {
   c.set("user", payload);
   await next();
 }
-__name(authenticate3, "authenticate");
+__name(authenticate4, "authenticate");
 function generateSlug2(name) {
   return name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 __name(generateSlug2, "generateSlug");
-tags.get("/", authenticate3, asyncHandler(async (c) => {
+tags.get("/", authenticate4, asyncHandler(async (c) => {
   const user = c.get("user");
+  const db = c.get("db");
   const tenantTags = await withRetry(() => db.getTagsByTenant(user.tenantId));
   return c.json({
     tags: tenantTags,
     total: tenantTags.length
   });
 }));
-tags.get("/:id", authenticate3, asyncHandler(async (c) => {
+tags.get("/cloud", authenticate4, asyncHandler(async (c) => {
+  const user = c.get("user");
+  const db = c.get("db");
+  const limit = parseInt(c.req.query("limit") || "50");
+  const tagCloud = await withRetry(() => db.getTagCloud(user.tenantId, limit));
+  const maxCount = Math.max(...tagCloud.map((t) => t.videoCount || 0), 1);
+  const weightedTags = tagCloud.map((tag) => ({
+    ...tag,
+    weight: Math.max(1, Math.ceil(tag.videoCount / maxCount * 5))
+  }));
+  return c.json({
+    tags: weightedTags,
+    total: weightedTags.length
+  });
+}));
+tags.get("/autocomplete", authenticate4, asyncHandler(async (c) => {
+  const user = c.get("user");
+  const db = c.get("db");
+  const query = c.req.query("q") || "";
+  const limit = parseInt(c.req.query("limit") || "10");
+  if (!query || query.length < 1) {
+    return c.json({ tags: [] });
+  }
+  const results = await withRetry(() => db.searchTags(user.tenantId, query, limit));
+  return c.json({
+    tags: results,
+    total: results.length
+  });
+}));
+tags.get("/:id", authenticate4, asyncHandler(async (c) => {
   const id = c.req.param("id");
+  const db = c.get("db");
+  if (id.includes("-") && !id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-/)) {
+    const user2 = c.get("user");
+    const tag2 = await withRetry(() => db.getTagBySlug(user2.tenantId, id));
+    if (!tag2) {
+      throw new NotFoundError("Tag", { slug: id });
+    }
+    return c.json(tag2);
+  }
   validateUUID(id, "tagId");
   const tag = await withRetry(() => db.getTagById(id));
   if (!tag) {
@@ -5563,17 +6463,9 @@ tags.get("/:id", authenticate3, asyncHandler(async (c) => {
   }
   return c.json(tag);
 }));
-tags.get("/slug/:slug", authenticate3, asyncHandler(async (c) => {
-  const slug = c.req.param("slug");
+tags.post("/", authenticate4, asyncHandler(async (c) => {
   const user = c.get("user");
-  const tag = await withRetry(() => db.getTagBySlug(user.tenantId, slug));
-  if (!tag) {
-    throw new NotFoundError("Tag", { slug });
-  }
-  return c.json(tag);
-}));
-tags.post("/", authenticate3, asyncHandler(async (c) => {
-  const user = c.get("user");
+  const db = c.get("db");
   const body = await c.req.json();
   const { name } = body;
   validateRequired(body, ["name"]);
@@ -5594,7 +6486,6 @@ tags.post("/", authenticate3, asyncHandler(async (c) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     tagId: tag.id,
     tenantId: user.tenantId,
-    userId: user.userId,
     name
   });
   return c.json({
@@ -5602,9 +6493,10 @@ tags.post("/", authenticate3, asyncHandler(async (c) => {
     tag
   }, 201);
 }));
-tags.put("/:id", authenticate3, asyncHandler(async (c) => {
+tags.put("/:id", authenticate4, asyncHandler(async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
+  const db = c.get("db");
   validateUUID(id, "tagId");
   const tag = await withRetry(() => db.getTagById(id));
   if (!tag) {
@@ -5626,7 +6518,6 @@ tags.put("/:id", authenticate3, asyncHandler(async (c) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     tagId: id,
     tenantId: user.tenantId,
-    userId: user.userId,
     updates: Object.keys(updates)
   });
   return c.json({
@@ -5634,9 +6525,10 @@ tags.put("/:id", authenticate3, asyncHandler(async (c) => {
     tag: updated
   });
 }));
-tags.delete("/:id", authenticate3, asyncHandler(async (c) => {
+tags.delete("/:id", authenticate4, asyncHandler(async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
+  const db = c.get("db");
   validateUUID(id, "tagId");
   const tag = await withRetry(() => db.getTagById(id));
   if (!tag) {
@@ -5649,16 +6541,16 @@ tags.delete("/:id", authenticate3, asyncHandler(async (c) => {
   console.log("[TAG_DELETED]", {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     tagId: id,
-    tenantId: user.tenantId,
-    userId: user.userId
+    tenantId: user.tenantId
   });
   return c.json({
     message: "Tag deleted successfully"
   });
 }));
-tags.get("/:id/videos", authenticate3, asyncHandler(async (c) => {
+tags.get("/:id/videos", authenticate4, asyncHandler(async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
+  const db = c.get("db");
   validateUUID(id, "tagId");
   const tag = await withRetry(() => db.getTagById(id));
   if (!tag) {
@@ -5678,7 +6570,7 @@ var tags_default = tags;
 
 // src/routes/analytics.ts
 var analytics = new Hono2();
-async function authenticate4(c, next) {
+async function authenticate5(c, next) {
   const token = extractToken(c.req.header("Authorization"));
   if (!token) {
     throw new AuthenticationError("Authentication required");
@@ -5690,10 +6582,11 @@ async function authenticate4(c, next) {
   c.set("user", payload);
   await next();
 }
-__name(authenticate4, "authenticate");
-analytics.get("/videos/:id", authenticate4, asyncHandler(async (c) => {
+__name(authenticate5, "authenticate");
+analytics.get("/videos/:id", authenticate5, asyncHandler(async (c) => {
   const videoId = c.req.param("id");
   const user = c.get("user");
+  const db = c.get("db");
   validateUUID(videoId, "videoId");
   const video = await withRetry(() => db.getVideoById(videoId));
   if (!video) {
@@ -5715,17 +6608,17 @@ analytics.get("/videos/:id", authenticate4, asyncHandler(async (c) => {
   });
 }));
 analytics.post("/videos/:id/view", asyncHandler(async (c) => {
-  const db2 = c.get("db");
+  const db = c.get("db");
   const videoId = c.req.param("id");
   const body = await c.req.json();
   const { sessionId } = body;
   validateUUID(videoId, "videoId");
-  const video = await withRetry(() => db2.getVideoById(videoId));
+  const video = await withRetry(() => db.getVideoById(videoId));
   if (!video) {
     throw new NotFoundError("Video", { videoId });
   }
   const updatedVideo = await withRetry(
-    () => db2.updateVideo(videoId, {
+    () => db.updateVideo(videoId, {
       views: (video.views || 0) + 1
     })
   );
@@ -5741,9 +6634,10 @@ analytics.post("/videos/:id/view", asyncHandler(async (c) => {
     views: updatedVideo.views
   });
 }));
-analytics.post("/videos/:id/like", authenticate4, asyncHandler(async (c) => {
+analytics.post("/videos/:id/like", authenticate5, asyncHandler(async (c) => {
   const videoId = c.req.param("id");
   const user = c.get("user");
+  const db = c.get("db");
   const body = await c.req.json();
   const { liked } = body;
   validateUUID(videoId, "videoId");
@@ -5775,9 +6669,10 @@ analytics.post("/videos/:id/like", authenticate4, asyncHandler(async (c) => {
     liked
   });
 }));
-analytics.post("/videos/:id/comment", authenticate4, asyncHandler(async (c) => {
+analytics.post("/videos/:id/comment", authenticate5, asyncHandler(async (c) => {
   const videoId = c.req.param("id");
   const user = c.get("user");
+  const db = c.get("db");
   const body = await c.req.json();
   const { comment } = body;
   validateUUID(videoId, "videoId");
@@ -5807,18 +6702,18 @@ analytics.post("/videos/:id/comment", authenticate4, asyncHandler(async (c) => {
   });
 }));
 analytics.post("/videos/:id/share", asyncHandler(async (c) => {
-  const db2 = c.get("db");
+  const db = c.get("db");
   const videoId = c.req.param("id");
   const body = await c.req.json();
   const { platform } = body;
   validateUUID(videoId, "videoId");
   validateRequired(body, ["platform"]);
-  const video = await withRetry(() => db2.getVideoById(videoId));
+  const video = await withRetry(() => db.getVideoById(videoId));
   if (!video) {
     throw new NotFoundError("Video", { videoId });
   }
   const updatedVideo = await withRetry(
-    () => db2.updateVideo(videoId, {
+    () => db.updateVideo(videoId, {
       shares: (video.shares || 0) + 1
     })
   );
@@ -5835,8 +6730,9 @@ analytics.post("/videos/:id/share", asyncHandler(async (c) => {
     platform
   });
 }));
-analytics.get("/dashboard", authenticate4, asyncHandler(async (c) => {
+analytics.get("/dashboard", authenticate5, asyncHandler(async (c) => {
   const user = c.get("user");
+  const db = c.get("db");
   const videos2 = await withRetry(
     () => db.getVideosByTenant(user.tenantId)
   );
@@ -5875,9 +6771,31 @@ analytics.get("/dashboard", authenticate4, asyncHandler(async (c) => {
     topVideosByEngagement
   });
 }));
-analytics.get("/videos/:id/metrics", authenticate4, asyncHandler(async (c) => {
+analytics.get("/trending", asyncHandler(async (c) => {
+  const db = c.get("db");
+  const limit = parseInt(c.req.query("limit") || "10");
+  const period = c.req.query("period") || "7d";
+  const videos2 = await withRetry(() => db.getAllVideos());
+  const trending = videos2.sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, limit).map((v) => ({
+    id: v.id,
+    title: v.title,
+    description: v.description,
+    thumbnailUrl: v.thumbnailUrl,
+    views: v.views || 0,
+    likes: v.likes || 0,
+    duration: v.duration,
+    createdAt: v.createdAt
+  }));
+  return c.json({
+    trending,
+    period,
+    total: trending.length
+  });
+}));
+analytics.get("/videos/:id/metrics", authenticate5, asyncHandler(async (c) => {
   const videoId = c.req.param("id");
   const user = c.get("user");
+  const db = c.get("db");
   const startDate = c.req.query("startDate");
   const endDate = c.req.query("endDate");
   validateUUID(videoId, "videoId");
@@ -5908,8 +6826,8 @@ var analytics_default = analytics;
 
 // src/database-d1.ts
 var D1Database = class {
-  constructor(db2) {
-    this.db = db2;
+  constructor(db) {
+    this.db = db;
   }
   static {
     __name(this, "D1Database");
@@ -5923,26 +6841,56 @@ var D1Database = class {
   }
   async getTenantById(id) {
     const result = await this.db.prepare("SELECT * FROM tenants WHERE id = ?").bind(id).first();
-    return result;
+    if (!result) return null;
+    return {
+      id: result.id,
+      name: result.name,
+      domain: result.domain,
+      createdAt: result.created_at
+    };
   }
   async getTenantByDomain(domain) {
     const result = await this.db.prepare("SELECT * FROM tenants WHERE domain = ?").bind(domain).first();
-    return result;
+    if (!result) return null;
+    return {
+      id: result.id,
+      name: result.name,
+      domain: result.domain,
+      createdAt: result.created_at
+    };
   }
   // ============================================================================
   // Users
   // ============================================================================
   async createUser(user) {
-    await this.db.prepare("INSERT INTO users (id, email, password, tenant_id, name, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(user.id, user.email, user.password, user.tenantId, user.name || "", user.createdAt).run();
+    await this.db.prepare("INSERT INTO users (id, email, password, tenant_id, name, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(user.id, user.email, user.password, user.tenantId, user.name || "", user.role || "user", user.createdAt).run();
     return user;
   }
   async getUserByEmail(email) {
     const result = await this.db.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
-    return result;
+    if (!result) return null;
+    return {
+      id: result.id,
+      email: result.email,
+      password: result.password,
+      name: result.name,
+      role: result.role || "user",
+      tenantId: result.tenant_id,
+      createdAt: result.created_at
+    };
   }
   async getUserById(id) {
     const result = await this.db.prepare("SELECT * FROM users WHERE id = ?").bind(id).first();
-    return result;
+    if (!result) return null;
+    return {
+      id: result.id,
+      email: result.email,
+      password: result.password,
+      name: result.name,
+      role: result.role || "user",
+      tenantId: result.tenant_id,
+      createdAt: result.created_at
+    };
   }
   async getUsersByTenant(tenantId) {
     const result = await this.db.prepare("SELECT * FROM users WHERE tenant_id = ?").bind(tenantId).all();
@@ -5959,20 +6907,24 @@ var D1Database = class {
       video.id,
       video.title,
       video.description || null,
-      video.status,
+      video.status || "pending",
       video.duration || null,
       video.url || null,
-      video.thumbnailUrl || null,
-      video.userId,
-      video.tenantId,
-      video.createdAt,
-      video.updatedAt || null
+      video.thumbnailUrl || video.thumbnail_url || null,
+      video.userId || video.user_id,
+      video.tenantId || video.tenant_id,
+      video.createdAt || video.created_at,
+      video.updatedAt || video.updated_at || null
     ).run();
     return video;
   }
-  async getVideoById(id) {
+  async getVideoById(id, tenantId) {
+    if (tenantId) {
+      const result2 = await this.db.prepare("SELECT * FROM videos WHERE id = ? AND tenant_id = ?").bind(id, tenantId).first();
+      return result2 || null;
+    }
     const result = await this.db.prepare("SELECT * FROM videos WHERE id = ?").bind(id).first();
-    return result;
+    return result || null;
   }
   async getVideosByTenant(tenantId, limit = 50, offset = 0) {
     const result = await this.db.prepare("SELECT * FROM videos WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?").bind(tenantId, limit, offset).all();
@@ -5982,10 +6934,14 @@ var D1Database = class {
     const result = await this.db.prepare("SELECT * FROM videos WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?").bind(userId, limit, offset).all();
     return result.results;
   }
+  async getAllVideos(limit = 100, offset = 0) {
+    const result = await this.db.prepare("SELECT * FROM videos ORDER BY created_at DESC LIMIT ? OFFSET ?").bind(limit, offset).all();
+    return result.results;
+  }
   async updateVideo(id, updates) {
     const video = await this.getVideoById(id);
     if (!video) return null;
-    const updatedVideo = { ...video, ...updates, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+    const updatedVideo = { ...video, ...updates, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
     await this.db.prepare(`
         UPDATE videos 
         SET title = ?, description = ?, status = ?, duration = ?, url = ?, thumbnail_url = ?, updated_at = ?
@@ -5995,9 +6951,9 @@ var D1Database = class {
       updatedVideo.description || null,
       updatedVideo.status,
       updatedVideo.duration || null,
-      updatedVideo.url || null,
-      updatedVideo.thumbnailUrl || null,
-      updatedVideo.updatedAt,
+      updatedVideo.url || updatedVideo.thumbnail_url || null,
+      updatedVideo.thumbnail_url || null,
+      updatedVideo.updated_at,
       id
     ).run();
     return updatedVideo;
@@ -6005,6 +6961,9 @@ var D1Database = class {
   async deleteVideo(id) {
     const result = await this.db.prepare("DELETE FROM videos WHERE id = ?").bind(id).run();
     return result.success;
+  }
+  async incrementVideoViews(id, tenantId) {
+    await this.db.prepare("INSERT INTO analytics (id, video_id, event_type, tenant_id, created_at) VALUES (?, ?, ?, ?, ?)").bind(crypto.randomUUID(), id, "view", tenantId || "", (/* @__PURE__ */ new Date()).toISOString()).run();
   }
   async searchVideos(tenantId, query, limit = 50) {
     const searchPattern = `%${query}%`;
@@ -6024,20 +6983,50 @@ var D1Database = class {
     return category;
   }
   async getCategoryById(id) {
-    const result = await this.db.prepare("SELECT * FROM categories WHERE id = ?").bind(id).first();
+    const result = await this.db.prepare("SELECT id, name, slug, description, tenant_id as tenantId, created_at as createdAt FROM categories WHERE id = ?").bind(id).first();
     return result;
   }
-  async getCategoryBySlug(slug, tenantId) {
-    const result = await this.db.prepare("SELECT * FROM categories WHERE slug = ? AND tenant_id = ?").bind(slug, tenantId).first();
+  async getCategoryBySlug(tenantId, slug) {
+    const result = await this.db.prepare("SELECT id, name, slug, description, tenant_id as tenantId, created_at as createdAt FROM categories WHERE tenant_id = ? AND slug = ?").bind(tenantId, slug).first();
     return result;
   }
   async getCategoriesByTenant(tenantId) {
-    const result = await this.db.prepare("SELECT * FROM categories WHERE tenant_id = ? ORDER BY name ASC").bind(tenantId).all();
+    const result = await this.db.prepare(`
+        SELECT c.id, c.name, c.slug, c.description, c.tenant_id as tenantId, c.created_at as createdAt,
+               COUNT(vc.video_id) as videoCount
+        FROM categories c
+        LEFT JOIN video_categories vc ON c.id = vc.category_id
+        WHERE c.tenant_id = ?
+        GROUP BY c.id
+        ORDER BY c.name ASC
+      `).bind(tenantId).all();
     return result.results;
   }
+  async updateCategory(id, updates) {
+    const category = await this.getCategoryById(id);
+    if (!category) return null;
+    const updated = {
+      ...category,
+      name: updates.name ?? category.name,
+      slug: updates.slug ?? category.slug,
+      description: updates.description ?? category.description
+    };
+    await this.db.prepare("UPDATE categories SET name = ?, slug = ?, description = ? WHERE id = ?").bind(updated.name, updated.slug, updated.description || null, id).run();
+    return updated;
+  }
   async deleteCategory(id) {
+    await this.db.prepare("DELETE FROM video_categories WHERE category_id = ?").bind(id).run();
     const result = await this.db.prepare("DELETE FROM categories WHERE id = ?").bind(id).run();
     return result.success;
+  }
+  async getVideosByCategory(categoryId) {
+    const result = await this.db.prepare(`
+        SELECT v.* FROM videos v
+        INNER JOIN video_categories vc ON v.id = vc.video_id
+        WHERE vc.category_id = ?
+        ORDER BY v.created_at DESC
+      `).bind(categoryId).all();
+    return result.results;
   }
   // ============================================================================
   // Tags
@@ -6047,20 +7036,84 @@ var D1Database = class {
     return tag;
   }
   async getTagById(id) {
-    const result = await this.db.prepare("SELECT * FROM tags WHERE id = ?").bind(id).first();
+    const result = await this.db.prepare("SELECT id, name, slug, tenant_id as tenantId, created_at as createdAt FROM tags WHERE id = ?").bind(id).first();
     return result;
   }
-  async getTagBySlug(slug, tenantId) {
-    const result = await this.db.prepare("SELECT * FROM tags WHERE slug = ? AND tenant_id = ?").bind(slug, tenantId).first();
+  async getTagBySlug(tenantId, slug) {
+    const result = await this.db.prepare("SELECT id, name, slug, tenant_id as tenantId, created_at as createdAt FROM tags WHERE tenant_id = ? AND slug = ?").bind(tenantId, slug).first();
     return result;
   }
   async getTagsByTenant(tenantId) {
-    const result = await this.db.prepare("SELECT * FROM tags WHERE tenant_id = ? ORDER BY name ASC").bind(tenantId).all();
+    const result = await this.db.prepare(`
+        SELECT t.id, t.name, t.slug, t.tenant_id as tenantId, t.created_at as createdAt,
+               COUNT(vt.video_id) as videoCount
+        FROM tags t
+        LEFT JOIN video_tags vt ON t.id = vt.tag_id
+        WHERE t.tenant_id = ?
+        GROUP BY t.id
+        ORDER BY t.name ASC
+      `).bind(tenantId).all();
     return result.results;
   }
+  async updateTag(id, updates) {
+    const tag = await this.getTagById(id);
+    if (!tag) return null;
+    const updated = {
+      ...tag,
+      name: updates.name ?? tag.name,
+      slug: updates.slug ?? tag.slug
+    };
+    await this.db.prepare("UPDATE tags SET name = ?, slug = ? WHERE id = ?").bind(updated.name, updated.slug, id).run();
+    return updated;
+  }
   async deleteTag(id) {
+    await this.db.prepare("DELETE FROM video_tags WHERE tag_id = ?").bind(id).run();
     const result = await this.db.prepare("DELETE FROM tags WHERE id = ?").bind(id).run();
     return result.success;
+  }
+  async getVideosByTag(tagId) {
+    const result = await this.db.prepare(`
+        SELECT v.* FROM videos v
+        INNER JOIN video_tags vt ON v.id = vt.video_id
+        WHERE vt.tag_id = ?
+        ORDER BY v.created_at DESC
+      `).bind(tagId).all();
+    return result.results;
+  }
+  async getTagCloud(tenantId, limit = 50) {
+    const result = await this.db.prepare(`
+        SELECT t.id, t.name, t.slug, t.tenant_id as tenantId, t.created_at as createdAt,
+               COUNT(vt.video_id) as videoCount
+        FROM tags t
+        LEFT JOIN video_tags vt ON t.id = vt.tag_id
+        WHERE t.tenant_id = ?
+        GROUP BY t.id
+        ORDER BY videoCount DESC, t.name ASC
+        LIMIT ?
+      `).bind(tenantId, limit).all();
+    return result.results;
+  }
+  async searchTags(tenantId, query, limit = 10) {
+    const searchPattern = `%${query}%`;
+    const result = await this.db.prepare(`
+        SELECT id, name, slug, tenant_id as tenantId, created_at as createdAt
+        FROM tags
+        WHERE tenant_id = ? AND name LIKE ?
+        ORDER BY name ASC
+        LIMIT ?
+      `).bind(tenantId, searchPattern, limit).all();
+    return result.results;
+  }
+  async searchCategories(tenantId, query, limit = 10) {
+    const searchPattern = `%${query}%`;
+    const result = await this.db.prepare(`
+        SELECT id, name, slug, description, tenant_id as tenantId, created_at as createdAt
+        FROM categories
+        WHERE tenant_id = ? AND name LIKE ?
+        ORDER BY name ASC
+        LIMIT ?
+      `).bind(tenantId, searchPattern, limit).all();
+    return result.results;
   }
   // ============================================================================
   // Video-Category Relations
@@ -6073,11 +7126,18 @@ var D1Database = class {
   }
   async getVideoCategories(videoId) {
     const result = await this.db.prepare(`
-        SELECT c.* FROM categories c
+        SELECT c.id, c.name, c.slug, c.description, c.tenant_id as tenantId, c.created_at as createdAt
+        FROM categories c
         INNER JOIN video_categories vc ON c.id = vc.category_id
         WHERE vc.video_id = ?
       `).bind(videoId).all();
     return result.results;
+  }
+  async setVideoCategories(videoId, categoryIds) {
+    await this.db.prepare("DELETE FROM video_categories WHERE video_id = ?").bind(videoId).run();
+    for (const catId of categoryIds) {
+      await this.addVideoCategory(videoId, catId);
+    }
   }
   // ============================================================================
   // Video-Tag Relations
@@ -6090,11 +7150,18 @@ var D1Database = class {
   }
   async getVideoTags(videoId) {
     const result = await this.db.prepare(`
-        SELECT t.* FROM tags t
+        SELECT t.id, t.name, t.slug, t.tenant_id as tenantId, t.created_at as createdAt
+        FROM tags t
         INNER JOIN video_tags vt ON t.id = vt.tag_id
         WHERE vt.video_id = ?
       `).bind(videoId).all();
     return result.results;
+  }
+  async setVideoTags(videoId, tagIds) {
+    await this.db.prepare("DELETE FROM video_tags WHERE video_id = ?").bind(videoId).run();
+    for (const tagId of tagIds) {
+      await this.addVideoTag(videoId, tagId);
+    }
   }
   // ============================================================================
   // Analytics
@@ -6135,6 +7202,23 @@ var D1Database = class {
   }
 };
 
+// src/middleware/security-headers.ts
+var securityHeaders = /* @__PURE__ */ __name(() => {
+  return async (c, next) => {
+    await next();
+    c.header("X-Content-Type-Options", "nosniff");
+    c.header("X-Frame-Options", "DENY");
+    c.header("X-XSS-Protection", "1; mode=block");
+    c.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    c.header(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    );
+    c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+    c.header("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  };
+}, "securityHeaders");
+
 // src/index-secure.ts
 var app = new Hono2();
 app.use("*", async (c, next) => {
@@ -6143,19 +7227,13 @@ app.use("*", async (c, next) => {
 });
 app.use("*", logger());
 app.use("*", cors({
-  origin: ["http://localhost:3000", "http://localhost:3001", "https://framevideos.com", "https://*.framevideos.com"],
+  origin: ["http://localhost:3000", "http://localhost:3001", "https://framevideos.com", "https://*.framevideos.com", "https://production.frame-videos-frontend.pages.dev", "https://*.frame-videos-frontend.pages.dev"],
   credentials: true,
   allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization", "Range"],
   exposeHeaders: ["Content-Range", "Accept-Ranges", "Content-Length"]
 }));
-app.use("*", async (c, next) => {
-  await next();
-  c.header("X-Content-Type-Options", "nosniff");
-  c.header("X-Frame-Options", "DENY");
-  c.header("X-XSS-Protection", "1; mode=block");
-  c.header("Referrer-Policy", "strict-origin-when-cross-origin");
-});
+app.use("*", securityHeaders());
 app.use("*", async (c, next) => {
   const requestId = crypto.randomUUID();
   c.set("requestId", requestId);
@@ -6189,6 +7267,7 @@ app.get("/api/v1", (c) => {
       health: "/health",
       auth: "/api/v1/auth",
       videos: "/api/v1/videos",
+      videosUpload: "/api/v1/videos/upload",
       tenants: "/api/v1/tenants",
       storage: "/api/v1/storage",
       categories: "/api/v1/categories",
@@ -6198,6 +7277,7 @@ app.get("/api/v1", (c) => {
   });
 });
 app.route("/api/v1/auth", auth_secure_default);
+app.route("/api/v1/videos/upload", videos_upload_default);
 app.route("/api/v1/videos", videos_secure_default);
 app.route("/api/v1/tenants", tenants_default);
 app.route("/api/v1/storage", storage_default);
