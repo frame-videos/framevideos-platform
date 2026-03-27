@@ -10,11 +10,13 @@ import categories from './routes/categories';
 import tags from './routes/tags';
 import videosSearch from './routes/videos-search';
 import analytics from './routes/analytics';
+import audit from './routes/audit';
 import { gdpr } from './routes/gdpr';
 import { FrameVideosError } from './error-handler';
 import { D1Database } from './database-d1';
 import { publicRateLimit } from './middleware/rate-limit';
 import { securityHeaders } from './middleware/security-headers';
+import { auditContextMiddleware } from './middleware/audit-context';
 
 // Types
 type Bindings = {
@@ -55,6 +57,9 @@ app.use('*', cors({
 
 // Security headers middleware (global)
 app.use('*', securityHeaders());
+
+// Audit context middleware (captures IP and User-Agent)
+app.use('*', auditContextMiddleware);
 
 // Request ID middleware
 app.use('*', async (c, next) => {
@@ -109,6 +114,7 @@ app.get('/api/v1', (c) => {
       categories: '/api/v1/categories',
       tags: '/api/v1/tags',
       analytics: '/api/v1/analytics',
+      audit: '/api/v1/audit (super_admin only)',
       gdpr: '/api/v1/users/me/data (GET), /api/v1/users/me/delete (DELETE)',
     },
   });
@@ -126,6 +132,7 @@ app.route('/api/v1/storage', storage);
 app.route('/api/v1/categories', categories);
 app.route('/api/v1/tags', tags);
 app.route('/api/v1/analytics', analytics);
+app.route('/api/v1/audit', audit);
 app.route('/api/v1', gdpr);
 
 // ============================================================================

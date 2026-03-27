@@ -56,9 +56,25 @@ export class D1Database {
   // ============================================================================
 
   async createUser(user: any): Promise<any> {
+    const now = new Date().toISOString();
     await this.db
-      .prepare('INSERT INTO users (id, email, password, tenant_id, name, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(user.id, user.email, user.password, user.tenantId, user.name || '', user.role || 'user', user.createdAt)
+      .prepare(`
+        INSERT INTO users (
+          id, email, password, tenant_id, name, role, created_at,
+          privacy_policy_accepted_at, terms_accepted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        user.id, 
+        user.email, 
+        user.password, 
+        user.tenantId, 
+        user.name || '', 
+        user.role || 'user', 
+        user.createdAt,
+        user.privacyPolicyAcceptedAt || now,
+        user.termsAcceptedAt || now
+      )
       .run();
     return user;
   }

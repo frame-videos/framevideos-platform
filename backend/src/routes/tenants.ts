@@ -11,6 +11,8 @@ import {
   withRetry,
 } from '../error-handler';
 import { authenticate, requireSuperAdmin } from '../middleware/auth';
+import { logAuditEvent, AuditEventType } from '../audit';
+import { getAuditContext } from '../middleware/audit-context';
 
 type Variables = {
   db: D1Database;
@@ -29,6 +31,9 @@ tenants.post('/', asyncHandler(async (c) => {
   const body = await c.req.json();
   const { name, domain } = body;
   const db = c.get('db');
+  const { ipAddress, userAgent } = getAuditContext(c);
+  const user = c.get('user');
+  const rawDB = c.env.DB;
 
   // Validation
   validateRequired(body, ['name', 'domain']);
@@ -55,6 +60,21 @@ tenants.post('/', asyncHandler(async (c) => {
     tenantId: tenant.id,
     name: tenant.name,
     domain: tenant.domain,
+  });
+
+  // Audit log
+  await logAuditEvent(rawDB, {
+    eventType: AuditEventType.TENANT_CREATE,
+    userId: user?.id,
+    tenantId: tenant.id,
+    resourceType: 'tenant',
+    resourceId: tenant.id,
+    ipAddress,
+    userAgent,
+    details: {
+      name: tenant.name,
+      domain: tenant.domain,
+    },
   });
 
   return c.json({

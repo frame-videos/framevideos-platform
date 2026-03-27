@@ -10,13 +10,18 @@ export default function RegisterPage() {
     email: '',
     password: '',
     confirmPassword: '',
+    acceptTerms: false,
+    acceptPrivacy: false,
   });
   const [validationError, setValidationError] = useState('');
   const { register, registerError } = useAuth();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ 
+      ...prev, 
+      [name]: type === 'checkbox' ? checked : value 
+    }));
     setValidationError('');
   };
 
@@ -34,10 +39,17 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!formData.acceptTerms || !formData.acceptPrivacy) {
+      setValidationError('Você deve aceitar os Termos de Uso e a Política de Privacidade');
+      return;
+    }
+
     register({
       name: formData.name,
       email: formData.email,
       password: formData.password,
+      acceptTerms: formData.acceptTerms,
+      acceptPrivacy: formData.acceptPrivacy,
     });
   };
 
@@ -131,6 +143,43 @@ export default function RegisterPage() {
               />
             </div>
 
+            {/* GDPR Consent */}
+            <div className="space-y-3 pt-2">
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  name="acceptTerms"
+                  checked={formData.acceptTerms}
+                  onChange={handleChange}
+                  required
+                  className="mt-1 w-4 h-4 rounded border-gray-700/50 bg-white/5 text-primary-600 focus:ring-2 focus:ring-primary-500/50 focus:ring-offset-0 transition cursor-pointer"
+                />
+                <span className="text-sm text-gray-400 group-hover:text-gray-300 transition">
+                  Eu aceito os{' '}
+                  <Link href="/terms" target="_blank" className="text-primary-400 hover:text-primary-300 underline">
+                    Termos de Uso
+                  </Link>
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  name="acceptPrivacy"
+                  checked={formData.acceptPrivacy}
+                  onChange={handleChange}
+                  required
+                  className="mt-1 w-4 h-4 rounded border-gray-700/50 bg-white/5 text-primary-600 focus:ring-2 focus:ring-primary-500/50 focus:ring-offset-0 transition cursor-pointer"
+                />
+                <span className="text-sm text-gray-400 group-hover:text-gray-300 transition">
+                  Eu aceito a{' '}
+                  <Link href="/privacy" target="_blank" className="text-primary-400 hover:text-primary-300 underline">
+                    Política de Privacidade
+                  </Link>
+                </span>
+              </label>
+            </div>
+
             {error && (
               <div className="bg-red-900/30 border border-red-700/30 text-red-300 px-4 py-3 rounded-xl text-sm animate-fadeIn">
                 {error}
@@ -164,10 +213,10 @@ export default function RegisterPage() {
 
         {/* Footer */}
         <p className="text-center text-gray-600 text-xs mt-8">
-          Ao criar sua conta, você concorda com os{' '}
-          <Link href="#" className="text-gray-500 hover:text-gray-400 underline transition">Termos de Uso</Link>
-          {' '}e{' '}
-          <Link href="#" className="text-gray-500 hover:text-gray-400 underline transition">Política de Privacidade</Link>.
+          Seus dados são protegidos de acordo com a GDPR.{' '}
+          <Link href="/privacy" className="text-gray-500 hover:text-gray-400 underline transition">
+            Saiba mais
+          </Link>
         </p>
       </div>
     </div>

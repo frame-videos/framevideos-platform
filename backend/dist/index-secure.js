@@ -4630,25 +4630,318 @@ async function logSecurityEvent(db, event) {
 }
 __name(logSecurityEvent, "logSecurityEvent");
 
+// src/audit.ts
+var AuditEventType = /* @__PURE__ */ ((AuditEventType2) => {
+  AuditEventType2["LOGIN_SUCCESS"] = "LOGIN_SUCCESS";
+  AuditEventType2["LOGIN_FAILED"] = "LOGIN_FAILED";
+  AuditEventType2["LOGOUT"] = "LOGOUT";
+  AuditEventType2["REGISTER_SUCCESS"] = "REGISTER_SUCCESS";
+  AuditEventType2["REGISTER_FAILED"] = "REGISTER_FAILED";
+  AuditEventType2["VIDEO_UPLOAD"] = "VIDEO_UPLOAD";
+  AuditEventType2["VIDEO_UPDATE"] = "VIDEO_UPDATE";
+  AuditEventType2["VIDEO_DELETE"] = "VIDEO_DELETE";
+  AuditEventType2["VIDEO_VIEW"] = "VIDEO_VIEW";
+  AuditEventType2["TENANT_CREATE"] = "TENANT_CREATE";
+  AuditEventType2["TENANT_UPDATE"] = "TENANT_UPDATE";
+  AuditEventType2["TENANT_DELETE"] = "TENANT_DELETE";
+  AuditEventType2["USER_ROLE_CHANGE"] = "USER_ROLE_CHANGE";
+  AuditEventType2["USER_DELETE"] = "USER_DELETE";
+  AuditEventType2["USER_BAN"] = "USER_BAN";
+  AuditEventType2["USER_UNBAN"] = "USER_UNBAN";
+  AuditEventType2["ACCOUNT_LOCKED"] = "ACCOUNT_LOCKED";
+  AuditEventType2["ACCOUNT_UNLOCKED"] = "ACCOUNT_UNLOCKED";
+  AuditEventType2["IP_BLOCKED"] = "IP_BLOCKED";
+  AuditEventType2["RATE_LIMIT_EXCEEDED"] = "RATE_LIMIT_EXCEEDED";
+  AuditEventType2["ADMIN_ACTION"] = "ADMIN_ACTION";
+  AuditEventType2["CONFIG_CHANGE"] = "CONFIG_CHANGE";
+  return AuditEventType2;
+})(AuditEventType || {});
+async function logAuditEvent(db, event) {
+  try {
+    const id = crypto.randomUUID();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    await db.prepare(`
+        INSERT INTO security_audit_log (id, event_type, ip_address, email, user_id, details, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+      id,
+      event.eventType,
+      event.ipAddress || null,
+      null,
+      // email não está no novo schema, mas mantém compatibilidade
+      event.userId || null,
+      JSON.stringify({
+        tenantId: event.tenantId,
+        resourceType: event.resourceType,
+        resourceId: event.resourceId,
+        userAgent: event.userAgent,
+        ...event.details
+      }),
+      now
+    ).run();
+    console.log(`[AUDIT] ${event.eventType}`, {
+      timestamp: now,
+      userId: event.userId,
+      tenantId: event.tenantId,
+      resource: event.resourceType ? `${event.resourceType}:${event.resourceId}` : void 0,
+      ip: event.ipAddress,
+      details: event.details
+    });
+  } catch (error) {
+    console.error("[AUDIT_ERROR] Failed to log event:", error);
+  }
+}
+__name(logAuditEvent, "logAuditEvent");
+async function queryAuditLogs(db, filters) {
+  let query = "SELECT * FROM security_audit_log WHERE 1=1";
+  const params = [];
+  if (filters.eventType) {
+    query += " AND event_type = ?";
+    params.push(filters.eventType);
+  }
+  if (filters.userId) {
+    query += " AND user_id = ?";
+    params.push(filters.userId);
+  }
+  if (filters.tenantId) {
+    query += " AND details LIKE ?";
+    params.push(`%"tenantId":"${filters.tenantId}"%`);
+  }
+  if (filters.startDate) {
+    query += " AND created_at >= ?";
+    params.push(filters.startDate);
+  }
+  if (filters.endDate) {
+    query += " AND created_at <= ?";
+    params.push(filters.endDate);
+  }
+  query += " ORDER BY created_at DESC";
+  if (filters.limit) {
+    query += " LIMIT ?";
+    params.push(filters.limit);
+  }
+  if (filters.offset) {
+    query += " OFFSET ?";
+    params.push(filters.offset);
+  }
+  const result = await db.prepare(query).bind(...params).all();
+  return result.results.map((row) => ({
+    ...row,
+    details: row.details ? JSON.parse(row.details) : null
+  }));
+}
+__name(queryAuditLogs, "queryAuditLogs");
+async function getAuditStats(db, filters) {
+  let query = "SELECT event_type, COUNT(*) as count FROM security_audit_log WHERE 1=1";
+  const params = [];
+  if (filters.startDate) {
+    query += " AND created_at >= ?";
+    params.push(filters.startDate);
+  }
+  if (filters.endDate) {
+    query += " AND created_at <= ?";
+    params.push(filters.endDate);
+  }
+  query += " GROUP BY event_type";
+  const result = await db.prepare(query).bind(...params).all();
+  const stats = {};
+  for (const row of result.results) {
+    stats[row.event_type] = row.count;
+  }
+  return stats;
+}
+__name(getAuditStats, "getAuditStats");
+
+// src/middleware/rate-limit.ts
+var KVRateLimiter = class {
+  static {
+    __name(this, "KVRateLimiter");
+  }
+  config;
+  kv;
+  constructor(kv, config) {
+    this.kv = kv;
+    this.config = config;
+  }
+  /**
+   * Check and consume rate limit
+   */
+  async consume(key) {
+    const now = Date.now();
+    const windowStart = now - this.config.windowMs;
+    const kvKey = `${this.config.keyPrefix}${key}`;
+    const stored = await this.kv.get(kvKey, "json");
+    let count = 0;
+    let resetAt = now + this.config.windowMs;
+    if (stored) {
+      if (stored.resetAt > now) {
+        count = stored.count;
+        resetAt = stored.resetAt;
+      }
+    }
+    if (count >= this.config.limit) {
+      const retryAfter = Math.ceil((resetAt - now) / 1e3);
+      return {
+        allowed: false,
+        limit: this.config.limit,
+        remaining: 0,
+        reset: Math.floor(resetAt / 1e3),
+        retryAfter
+      };
+    }
+    count++;
+    const ttl = Math.ceil((resetAt - now) / 1e3);
+    await this.kv.put(
+      kvKey,
+      JSON.stringify({ count, resetAt }),
+      { expirationTtl: ttl }
+    );
+    return {
+      allowed: true,
+      limit: this.config.limit,
+      remaining: this.config.limit - count,
+      reset: Math.floor(resetAt / 1e3)
+    };
+  }
+  /**
+   * Reset rate limit for a key
+   */
+  async reset(key) {
+    const kvKey = `${this.config.keyPrefix}${key}`;
+    await this.kv.delete(kvKey);
+  }
+};
+function getClientIP(c) {
+  const cfIp = c.req.header("cf-connecting-ip");
+  if (cfIp) return cfIp;
+  const forwarded = c.req.header("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  const realIp = c.req.header("x-real-ip");
+  if (realIp) return realIp;
+  return "0.0.0.0";
+}
+__name(getClientIP, "getClientIP");
+function getUserId(c) {
+  try {
+    const tenantContext = c.get("tenantContext");
+    if (tenantContext?.userId) {
+      return tenantContext.userId;
+    }
+    const user = c.get("user");
+    return user?.id || user?.sub || null;
+  } catch {
+    return null;
+  }
+}
+__name(getUserId, "getUserId");
+function rateLimitMiddleware(config) {
+  return async (c, next) => {
+    const kv = c.env.CACHE;
+    if (!kv) {
+      console.warn("[RATE_LIMIT] KV namespace not available, skipping rate limit");
+      await next();
+      return;
+    }
+    const limiter = new KVRateLimiter(kv, config);
+    let key;
+    if (config.keyPrefix.includes("user")) {
+      const userId = getUserId(c);
+      if (!userId) {
+        key = getClientIP(c);
+      } else {
+        key = userId;
+      }
+    } else {
+      key = getClientIP(c);
+    }
+    const result = await limiter.consume(key);
+    c.header("X-RateLimit-Limit", String(result.limit));
+    c.header("X-RateLimit-Remaining", String(result.remaining));
+    c.header("X-RateLimit-Reset", String(result.reset));
+    if (!result.allowed) {
+      c.header("Retry-After", String(result.retryAfter || 60));
+      console.warn("[RATE_LIMIT_EXCEEDED]", {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        key,
+        limit: result.limit,
+        path: c.req.path,
+        method: c.req.method
+      });
+      return c.json({
+        error: {
+          message: config.message || "Too many requests. Please try again later.",
+          code: 429,
+          category: "RATE_LIMIT",
+          limit: result.limit,
+          remaining: result.remaining,
+          reset: result.reset,
+          retryAfter: result.retryAfter,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        }
+      }, 429);
+    }
+    await next();
+  };
+}
+__name(rateLimitMiddleware, "rateLimitMiddleware");
+var publicRateLimit = rateLimitMiddleware({
+  limit: 100,
+  windowMs: 60 * 1e3,
+  // 1 minute
+  keyPrefix: "rl:public:ip:",
+  message: "Too many requests from this IP. Please try again later."
+});
+var authenticatedRateLimit = rateLimitMiddleware({
+  limit: 1e3,
+  windowMs: 60 * 1e3,
+  // 1 minute
+  keyPrefix: "rl:auth:user:",
+  message: "Too many requests. Please try again later."
+});
+var uploadRateLimit = rateLimitMiddleware({
+  limit: 10,
+  windowMs: 60 * 1e3,
+  // 1 minute
+  keyPrefix: "rl:upload:user:",
+  message: "Too many upload requests. Please try again later."
+});
+var loginRateLimit = rateLimitMiddleware({
+  limit: 10,
+  windowMs: 60 * 1e3,
+  // 1 minute
+  keyPrefix: "rl:login:ip:",
+  message: "Too many login attempts. Please try again later."
+});
+var registerRateLimit = rateLimitMiddleware({
+  limit: 5,
+  windowMs: 60 * 1e3,
+  // 1 minute
+  keyPrefix: "rl:register:ip:",
+  message: "Too many registration attempts. Please try again later."
+});
+
 // src/routes/auth-secure.ts
 var auth = new Hono2();
 function getRawDB(c) {
   return c.env.DB;
 }
 __name(getRawDB, "getRawDB");
-function getClientIP(c) {
+function getClientIP2(c) {
   return c.req.header("cf-connecting-ip") || c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "0.0.0.0";
 }
-__name(getClientIP, "getClientIP");
-auth.post("/register", asyncHandler(async (c) => {
+__name(getClientIP2, "getClientIP");
+auth.post("/register", registerRateLimit, asyncHandler(async (c) => {
   const body = await c.req.json();
-  const { email, password, name } = body;
+  const { email, password, name, acceptTerms, acceptPrivacy } = body;
   let { tenantId } = body;
   const db = c.get("db");
   const rawDB = getRawDB(c);
-  const clientIP = getClientIP(c);
+  const clientIP = getClientIP2(c);
   const userAgent = c.req.header("user-agent") || "";
-  validateRequired(body, ["email", "password"]);
+  validateRequired(body, ["email", "password", "acceptTerms", "acceptPrivacy"]);
+  if (!acceptTerms || !acceptPrivacy) {
+    throw new ValidationError("You must accept the Terms of Service and Privacy Policy to register");
+  }
   validateEmail(email);
   const passwordResult = validatePasswordStrength(password);
   if (!passwordResult.valid) {
@@ -4697,13 +4990,16 @@ auth.post("/register", asyncHandler(async (c) => {
   const referer = c.req.header("referer") || "";
   const isFrameVideosDomain = origin.includes("framevideos.com") || referer.includes("framevideos.com");
   const userRole = isFrameVideosDomain ? "admin" : "user";
+  const now = (/* @__PURE__ */ new Date()).toISOString();
   const user = {
     id: crypto.randomUUID(),
     email,
     password: await hashPassword(password),
     role: userRole,
     tenantId,
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    createdAt: now,
+    privacyPolicyAcceptedAt: now,
+    termsAcceptedAt: now
   };
   await withRetry(() => db.createUser(user));
   const token = await generateToken(user);
@@ -4713,6 +5009,14 @@ auth.post("/register", asyncHandler(async (c) => {
     email: user.email,
     userId: user.id,
     details: { tenantId: user.tenantId }
+  });
+  await logAuditEvent(rawDB, {
+    eventType: "REGISTER_SUCCESS" /* REGISTER_SUCCESS */,
+    userId: user.id,
+    tenantId: user.tenantId,
+    ipAddress: clientIP,
+    userAgent,
+    details: { email: user.email }
   });
   console.log("[USER_REGISTERED]", {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -4731,12 +5035,12 @@ auth.post("/register", asyncHandler(async (c) => {
     token
   }, 201);
 }));
-auth.post("/login", asyncHandler(async (c) => {
+auth.post("/login", loginRateLimit, asyncHandler(async (c) => {
   const body = await c.req.json();
   const { email, password } = body;
   const db = c.get("db");
   const rawDB = getRawDB(c);
-  const clientIP = getClientIP(c);
+  const clientIP = getClientIP2(c);
   const userAgent = c.req.header("user-agent") || "";
   validateRequired(body, ["email", "password"]);
   const rateResult = await rateLimiter.checkRateLimit(rawDB, clientIP);
@@ -4827,6 +5131,18 @@ auth.post("/login", asyncHandler(async (c) => {
         accountLocked: lockResult.locked
       }
     });
+    await logAuditEvent(rawDB, {
+      eventType: "LOGIN_FAILED" /* LOGIN_FAILED */,
+      userId: user.id,
+      tenantId: user.tenantId,
+      ipAddress: clientIP,
+      userAgent,
+      details: {
+        email,
+        reason: "invalid_password",
+        failedAttempts: lockResult.failedAttempts
+      }
+    });
     console.warn("[LOGIN_FAILED]", {
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       email,
@@ -4858,6 +5174,14 @@ auth.post("/login", asyncHandler(async (c) => {
     email: user.email,
     userId: user.id,
     details: { tenantId: user.tenantId }
+  });
+  await logAuditEvent(rawDB, {
+    eventType: "LOGIN_SUCCESS" /* LOGIN_SUCCESS */,
+    userId: user.id,
+    tenantId: user.tenantId,
+    ipAddress: clientIP,
+    userAgent,
+    details: { email: user.email }
   });
   console.log("[USER_LOGIN]", {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -5252,6 +5576,25 @@ var AnalyticsDatabase = class {
 };
 var analyticsDb = new AnalyticsDatabase();
 
+// src/middleware/audit-context.ts
+async function auditContextMiddleware(c, next) {
+  const ipAddress = c.req.header("cf-connecting-ip") || // Cloudflare
+  c.req.header("x-real-ip") || // Nginx
+  c.req.header("x-forwarded-for")?.split(",")[0].trim() || // Standard proxy
+  "unknown";
+  const userAgent = c.req.header("user-agent") || "unknown";
+  c.set("auditContext", {
+    ipAddress,
+    userAgent
+  });
+  await next();
+}
+__name(auditContextMiddleware, "auditContextMiddleware");
+function getAuditContext(c) {
+  return c.get("auditContext") || {};
+}
+__name(getAuditContext, "getAuditContext");
+
 // src/routes/videos-secure.ts
 var videos = new Hono2();
 videos.use("*", tenantIsolation);
@@ -5335,6 +5678,8 @@ videos.delete("/:id", asyncHandler(async (c) => {
   const db = c.get("db");
   const id = c.req.param("id");
   const { tenantId, userId } = getTenantContext(c);
+  const { ipAddress, userAgent } = getAuditContext(c);
+  const rawDB = c.env.DB;
   validateUUID(id, "videoId");
   const video = await withRetry(() => db.getVideoById(id, tenantId));
   if (!video) {
@@ -5347,6 +5692,19 @@ videos.delete("/:id", asyncHandler(async (c) => {
     videoId: id,
     tenantId,
     userId
+  });
+  await logAuditEvent(rawDB, {
+    eventType: "VIDEO_DELETE" /* VIDEO_DELETE */,
+    userId,
+    tenantId,
+    resourceType: "video",
+    resourceId: id,
+    ipAddress,
+    userAgent,
+    details: {
+      title: video.title,
+      url: video.url
+    }
   });
   return c.json({
     message: "Video deleted successfully"
@@ -5451,9 +5809,12 @@ var videos_secure_default = videos;
 // src/routes/videos-upload.ts
 var upload = new Hono2();
 upload.use("*", tenantIsolation);
+upload.use("*", uploadRateLimit);
 upload.post("/", asyncHandler(async (c) => {
   const db = c.get("db");
   const { tenantId, userId } = getTenantContext(c);
+  const { ipAddress, userAgent } = getAuditContext(c);
+  const rawDB = c.env.DB;
   const formData = await c.req.formData();
   const videoFile = formData.get("video");
   const title = formData.get("title");
@@ -5526,6 +5887,20 @@ upload.post("/", asyncHandler(async (c) => {
       userId,
       size: videoFile.size,
       title
+    });
+    await logAuditEvent(rawDB, {
+      eventType: "VIDEO_UPLOAD" /* VIDEO_UPLOAD */,
+      userId,
+      tenantId,
+      resourceType: "video",
+      resourceId: videoId,
+      ipAddress,
+      userAgent,
+      details: {
+        title,
+        size: videoFile.size,
+        type: videoFile.type
+      }
     });
     return c.json({
       message: "Video uploaded successfully",
@@ -5662,6 +6037,9 @@ tenants.post("/", asyncHandler(async (c) => {
   const body = await c.req.json();
   const { name, domain } = body;
   const db = c.get("db");
+  const { ipAddress, userAgent } = getAuditContext(c);
+  const user = c.get("user");
+  const rawDB = c.env.DB;
   validateRequired(body, ["name", "domain"]);
   const existingTenant = await withRetry(() => db.getTenantByDomain(domain));
   if (existingTenant) {
@@ -5679,6 +6057,19 @@ tenants.post("/", asyncHandler(async (c) => {
     tenantId: tenant.id,
     name: tenant.name,
     domain: tenant.domain
+  });
+  await logAuditEvent(rawDB, {
+    eventType: "TENANT_CREATE" /* TENANT_CREATE */,
+    userId: user?.id,
+    tenantId: tenant.id,
+    resourceType: "tenant",
+    resourceId: tenant.id,
+    ipAddress,
+    userAgent,
+    details: {
+      name: tenant.name,
+      domain: tenant.domain
+    }
   });
   return c.json({
     message: "Tenant created successfully",
@@ -6824,6 +7215,206 @@ analytics.get("/videos/:id/metrics", authenticate5, asyncHandler(async (c) => {
 }));
 var analytics_default = analytics;
 
+// src/routes/audit.ts
+var audit = new Hono2();
+audit.get("/logs", requireSuperAdmin, async (c) => {
+  try {
+    const db = c.env.DB;
+    const eventType = c.req.query("event_type");
+    const userId = c.req.query("user_id");
+    const tenantId = c.req.query("tenant_id");
+    const startDate = c.req.query("start_date");
+    const endDate = c.req.query("end_date");
+    const limit = parseInt(c.req.query("limit") || "100");
+    const offset = parseInt(c.req.query("offset") || "0");
+    const logs = await queryAuditLogs(db, {
+      eventType,
+      userId,
+      tenantId,
+      startDate,
+      endDate,
+      limit,
+      offset
+    });
+    return c.json({
+      success: true,
+      data: logs,
+      pagination: {
+        limit,
+        offset,
+        count: logs.length
+      }
+    });
+  } catch (error) {
+    console.error("[AUDIT_LOGS_ERROR]", error);
+    return c.json(
+      {
+        success: false,
+        error: "Failed to fetch audit logs",
+        message: error.message
+      },
+      500
+    );
+  }
+});
+audit.get("/stats", requireSuperAdmin, async (c) => {
+  try {
+    const db = c.env.DB;
+    const startDate = c.req.query("start_date");
+    const endDate = c.req.query("end_date");
+    const stats = await getAuditStats(db, {
+      startDate,
+      endDate
+    });
+    return c.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error("[AUDIT_STATS_ERROR]", error);
+    return c.json(
+      {
+        success: false,
+        error: "Failed to fetch audit stats",
+        message: error.message
+      },
+      500
+    );
+  }
+});
+audit.get("/event-types", requireSuperAdmin, async (c) => {
+  return c.json({
+    success: true,
+    data: Object.values(AuditEventType)
+  });
+});
+var audit_default = audit;
+
+// src/routes/gdpr.ts
+var gdpr = new Hono2();
+async function authenticateUser(c) {
+  const token = extractToken(c);
+  if (!token) {
+    throw new AuthenticationError("No token provided");
+  }
+  const decoded = await verifyToken(token);
+  if (!decoded || !decoded.userId) {
+    throw new AuthenticationError("Invalid token");
+  }
+  const db = c.get("db");
+  const user = await db.getUserById(decoded.userId);
+  if (!user) {
+    throw new NotFoundError("User not found");
+  }
+  if (user.deletedAt) {
+    throw new AuthenticationError("User account has been deleted");
+  }
+  return user;
+}
+__name(authenticateUser, "authenticateUser");
+gdpr.get("/users/me/data", asyncHandler(async (c) => {
+  const user = await authenticateUser(c);
+  const db = c.get("db");
+  const rawDB = c.env.DB;
+  const userData = {
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      tenantId: user.tenantId,
+      createdAt: user.createdAt,
+      privacyPolicyAcceptedAt: user.privacyPolicyAcceptedAt || null,
+      termsAcceptedAt: user.termsAcceptedAt || null
+    },
+    videos: [],
+    analytics: [],
+    favorites: [],
+    comments: []
+  };
+  try {
+    const videos2 = await rawDB.prepare("SELECT id, title, description, status, duration, url, thumbnail_url, created_at, updated_at FROM videos WHERE user_id = ? AND tenant_id = ?").bind(user.id, user.tenantId).all();
+    userData.videos = videos2.results || [];
+  } catch (error) {
+    console.error("Error fetching videos:", error);
+  }
+  try {
+    const analytics2 = await rawDB.prepare("SELECT id, video_id, event_type, metadata, created_at FROM analytics WHERE user_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 1000").bind(user.id, user.tenantId).all();
+    userData.analytics = analytics2.results || [];
+  } catch (error) {
+    console.error("Error fetching analytics:", error);
+  }
+  try {
+    const favorites = await rawDB.prepare("SELECT video_id, created_at FROM favorites WHERE user_id = ?").bind(user.id).all();
+    userData.favorites = favorites.results || [];
+  } catch (error) {
+  }
+  try {
+    const comments = await rawDB.prepare("SELECT id, video_id, content, created_at FROM comments WHERE user_id = ?").bind(user.id).all();
+    userData.comments = comments.results || [];
+  } catch (error) {
+  }
+  return c.json({
+    success: true,
+    data: userData,
+    exportedAt: (/* @__PURE__ */ new Date()).toISOString()
+  });
+}));
+gdpr.delete("/users/me/delete", asyncHandler(async (c) => {
+  const user = await authenticateUser(c);
+  const rawDB = c.env.DB;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await rawDB.prepare(`
+      UPDATE users 
+      SET 
+        deleted_at = ?,
+        email = ?,
+        name = ?,
+        password = ?
+      WHERE id = ? AND tenant_id = ?
+    `).bind(
+    now,
+    `deleted_${user.id}@anonymized.local`,
+    "Deleted User",
+    "DELETED",
+    user.id,
+    user.tenantId
+  ).run();
+  await rawDB.prepare(`
+      UPDATE videos 
+      SET 
+        title = 'Deleted Video',
+        description = 'This video has been deleted by the user'
+      WHERE user_id = ? AND tenant_id = ?
+    `).bind(user.id, user.tenantId).run();
+  await rawDB.prepare("DELETE FROM analytics WHERE user_id = ? AND tenant_id = ?").bind(user.id, user.tenantId).run();
+  try {
+    await rawDB.prepare("DELETE FROM favorites WHERE user_id = ?").bind(user.id).run();
+  } catch (error) {
+  }
+  try {
+    await rawDB.prepare(`
+        UPDATE comments 
+        SET content = '[deleted]', user_id = NULL 
+        WHERE user_id = ?
+      `).bind(user.id).run();
+  } catch (error) {
+  }
+  try {
+    await rawDB.prepare("DELETE FROM login_attempts WHERE email = ?").bind(user.email).run();
+  } catch (error) {
+  }
+  try {
+    await rawDB.prepare("DELETE FROM account_lockouts WHERE user_id = ?").bind(user.id).run();
+  } catch (error) {
+  }
+  return c.json({
+    success: true,
+    message: "Your account has been deleted and your personal data has been anonymized",
+    deletedAt: now
+  });
+}));
+
 // src/database-d1.ts
 var D1Database = class {
   constructor(db) {
@@ -6863,11 +7454,27 @@ var D1Database = class {
   // Users
   // ============================================================================
   async createUser(user) {
-    await this.db.prepare("INSERT INTO users (id, email, password, tenant_id, name, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(user.id, user.email, user.password, user.tenantId, user.name || "", user.role || "user", user.createdAt).run();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    await this.db.prepare(`
+        INSERT INTO users (
+          id, email, password, tenant_id, name, role, created_at,
+          privacy_policy_accepted_at, terms_accepted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+      user.id,
+      user.email,
+      user.password,
+      user.tenantId,
+      user.name || "",
+      user.role || "user",
+      user.createdAt,
+      user.privacyPolicyAcceptedAt || now,
+      user.termsAcceptedAt || now
+    ).run();
     return user;
   }
   async getUserByEmail(email) {
-    const result = await this.db.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
+    const result = await this.db.prepare("SELECT * FROM users WHERE email = ? AND deleted_at IS NULL").bind(email).first();
     if (!result) return null;
     return {
       id: result.id,
@@ -6876,7 +7483,10 @@ var D1Database = class {
       name: result.name,
       role: result.role || "user",
       tenantId: result.tenant_id,
-      createdAt: result.created_at
+      createdAt: result.created_at,
+      deletedAt: result.deleted_at || null,
+      privacyPolicyAcceptedAt: result.privacy_policy_accepted_at || null,
+      termsAcceptedAt: result.terms_accepted_at || null
     };
   }
   async getUserById(id) {
@@ -6889,7 +7499,10 @@ var D1Database = class {
       name: result.name,
       role: result.role || "user",
       tenantId: result.tenant_id,
-      createdAt: result.created_at
+      createdAt: result.created_at,
+      deletedAt: result.deleted_at || null,
+      privacyPolicyAcceptedAt: result.privacy_policy_accepted_at || null,
+      termsAcceptedAt: result.terms_accepted_at || null
     };
   }
   async getUsersByTenant(tenantId) {
@@ -7234,12 +7847,14 @@ app.use("*", cors({
   exposeHeaders: ["Content-Range", "Accept-Ranges", "Content-Length"]
 }));
 app.use("*", securityHeaders());
+app.use("*", auditContextMiddleware);
 app.use("*", async (c, next) => {
   const requestId = crypto.randomUUID();
   c.set("requestId", requestId);
   c.header("X-Request-ID", requestId);
   await next();
 });
+app.use("/api/v1/*", publicRateLimit);
 app.get("/health", (c) => {
   return c.json({
     status: "ok",
@@ -7272,7 +7887,9 @@ app.get("/api/v1", (c) => {
       storage: "/api/v1/storage",
       categories: "/api/v1/categories",
       tags: "/api/v1/tags",
-      analytics: "/api/v1/analytics"
+      analytics: "/api/v1/analytics",
+      audit: "/api/v1/audit (super_admin only)",
+      gdpr: "/api/v1/users/me/data (GET), /api/v1/users/me/delete (DELETE)"
     }
   });
 });
@@ -7284,6 +7901,8 @@ app.route("/api/v1/storage", storage_default);
 app.route("/api/v1/categories", categories_default);
 app.route("/api/v1/tags", tags_default);
 app.route("/api/v1/analytics", analytics_default);
+app.route("/api/v1/audit", audit_default);
+app.route("/api/v1", gdpr);
 app.notFound((c) => {
   const requestId = c.get("requestId") || "unknown";
   console.warn("[NOT_FOUND]", {

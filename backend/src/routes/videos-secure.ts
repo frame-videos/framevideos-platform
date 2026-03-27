@@ -11,6 +11,8 @@ import {
 } from '../error-handler';
 import { analyticsDb } from '../analytics';
 import { D1Database } from '../database-d1';
+import { logAuditEvent, AuditEventType } from '../audit';
+import { getAuditContext } from '../middleware/audit-context';
 
 type Variables = {
   db: D1Database;
@@ -156,6 +158,8 @@ videos.delete('/:id', asyncHandler(async (c) => {
   const db = c.get('db');
   const id = c.req.param('id');
   const { tenantId, userId } = getTenantContext(c);
+  const { ipAddress, userAgent } = getAuditContext(c);
+  const rawDB = c.env.DB;
   
   // Validate UUID format
   validateUUID(id, 'videoId');
@@ -179,6 +183,21 @@ videos.delete('/:id', asyncHandler(async (c) => {
     videoId: id,
     tenantId,
     userId,
+  });
+
+  // Audit log
+  await logAuditEvent(rawDB, {
+    eventType: AuditEventType.VIDEO_DELETE,
+    userId,
+    tenantId,
+    resourceType: 'video',
+    resourceId: id,
+    ipAddress,
+    userAgent,
+    details: {
+      title: video.title,
+      url: video.url,
+    },
   });
 
   return c.json({
