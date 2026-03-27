@@ -129,7 +129,13 @@ export function getClientIP(c: Context): string {
  */
 export function getUserId(c: Context): string | null {
   try {
-    // Assuming JWT payload is set in context by auth middleware
+    // Try to get from tenant context (set by tenantIsolation middleware)
+    const tenantContext = c.get('tenantContext');
+    if (tenantContext?.userId) {
+      return tenantContext.userId;
+    }
+    
+    // Fallback to user context
     const user = c.get('user');
     return user?.id || user?.sub || null;
   } catch {

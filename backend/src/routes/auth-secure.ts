@@ -20,6 +20,7 @@ import {
 import { D1RateLimiter, rateLimiter } from '../rate-limiter';
 import { D1AccountLockout, accountLockout } from '../account-lockout';
 import { logSecurityEvent, SecurityEventType } from '../security-audit';
+import { logAuditEvent, AuditEventType } from '../audit';
 import { loginRateLimit, registerRateLimit } from '../middleware/rate-limit';
 
 type Bindings = {
@@ -55,7 +56,7 @@ function getClientIP(c: any): string {
 
 auth.post('/register', registerRateLimit, asyncHandler(async (c) => {
   const body = await c.req.json();
-  const { email, password, name } = body;
+  const { email, password, name, acceptTerms, acceptPrivacy } = body;
   let { tenantId } = body;
   const db = c.get('db');
   const rawDB = getRawDB(c);
@@ -63,7 +64,13 @@ auth.post('/register', registerRateLimit, asyncHandler(async (c) => {
   const userAgent = c.req.header('user-agent') || '';
 
   // Validation
-  validateRequired(body, ['email', 'password']);
+  validateRequired(body, ['email', 'password', 'acceptTerms', 'acceptPrivacy']);
+  
+  // GDPR: Require explicit consent
+  if (!acceptTerms || !acceptPrivacy) {
+    throw new ValidationError('You must accept the Terms of Service and Privacy Policy to register');
+  }
+  
   validateEmail(email);
 
   // Validate password strength
@@ -128,13 +135,16 @@ auth.post('/register', registerRateLimit, asyncHandler(async (c) => {
   const userRole = isFrameVideosDomain ? 'admin' : 'user';
 
   // Create user
+  const now = new Date().toISOString();
   const user: User = {
     id: crypto.randomUUID(),
     email,
     password: await hashPassword(password),
     role: userRole,
     tenantId,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    privacyPolicyAcceptedAt: now,
+    termsAcceptedAt: now,
   };
 
   await withRetry(() => db.createUser(user));
@@ -149,6 +159,16 @@ auth.post('/register', registerRateLimit, asyncHandler(async (c) => {
     email: user.email,
     userId: user.id,
     details: { tenantId: user.tenantId },
+  });
+
+  // Audit log
+  await logAuditEvent(rawDB, {
+    eventType: AuditEventType.REGISTER_SUCCESS,
+    userId: user.id,
+    tenantId: user.tenantId,
+    ipAddress: clientIP,
+    userAgent,
+    details: { email: user.email },
   });
 
   console.log('[USER_REGISTERED]', {
@@ -301,6 +321,20 @@ auth.post('/login', loginRateLimit, asyncHandler(async (c) => {
       },
     });
 
+    // Audit log
+    await logAuditEvent(rawDB, {
+      eventType: AuditEventType.LOGIN_FAILED,
+      userId: user.id,
+      tenantId: user.tenantId,
+      ipAddress: clientIP,
+      userAgent,
+      details: { 
+        email,
+        reason: 'invalid_password',
+        failedAttempts: lockResult.failedAttempts,
+      },
+    });
+
     console.warn('[LOGIN_FAILED]', {
       timestamp: new Date().toISOString(),
       email,
@@ -341,6 +375,16 @@ auth.post('/login', loginRateLimit, asyncHandler(async (c) => {
     email: user.email,
     userId: user.id,
     details: { tenantId: user.tenantId },
+  });
+
+  // Audit log
+  await logAuditEvent(rawDB, {
+    eventType: AuditEventType.LOGIN_SUCCESS,
+    userId: user.id,
+    tenantId: user.tenantId,
+    ipAddress: clientIP,
+    userAgent,
+    details: { email: user.email },
   });
 
   console.log('[USER_LOGIN]', {

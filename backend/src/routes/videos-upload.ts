@@ -10,6 +10,9 @@ import {
 } from '../error-handler';
 import { D1Database } from '../database-d1';
 import { Video } from '../database';
+import { uploadRateLimit } from '../middleware/rate-limit';
+import { logAuditEvent, AuditEventType } from '../audit';
+import { getAuditContext } from '../middleware/audit-context';
 
 type Bindings = {
   STORAGE: R2Bucket;
@@ -25,6 +28,9 @@ const upload = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 // Apply tenant isolation middleware
 upload.use('*', tenantIsolation);
 
+// Apply upload rate limiting (10 req/min per user)
+upload.use('*', uploadRateLimit);
+
 // ============================================================================
 // Upload Video with Multipart Support
 // ============================================================================
@@ -32,6 +38,8 @@ upload.use('*', tenantIsolation);
 upload.post('/', asyncHandler(async (c) => {
   const db = c.get('db');
   const { tenantId, userId } = getTenantContext(c);
+  const { ipAddress, userAgent } = getAuditContext(c);
+  const rawDB = c.env.DB;
   
   // Parse multipart form data
   const formData = await c.req.formData();
@@ -133,6 +141,22 @@ upload.post('/', asyncHandler(async (c) => {
       userId,
       size: videoFile.size,
       title,
+    });
+
+    // Audit log
+    await logAuditEvent(rawDB, {
+      eventType: AuditEventType.VIDEO_UPLOAD,
+      userId,
+      tenantId,
+      resourceType: 'video',
+      resourceId: videoId,
+      ipAddress,
+      userAgent,
+      details: {
+        title,
+        size: videoFile.size,
+        type: videoFile.type,
+      },
     });
 
     return c.json({

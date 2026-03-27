@@ -10,6 +10,7 @@ import categories from './routes/categories';
 import tags from './routes/tags';
 import videosSearch from './routes/videos-search';
 import analytics from './routes/analytics';
+import { gdpr } from './routes/gdpr';
 import { FrameVideosError } from './error-handler';
 import { D1Database } from './database-d1';
 import { publicRateLimit } from './middleware/rate-limit';
@@ -108,6 +109,7 @@ app.get('/api/v1', (c) => {
       categories: '/api/v1/categories',
       tags: '/api/v1/tags',
       analytics: '/api/v1/analytics',
+      gdpr: '/api/v1/users/me/data (GET), /api/v1/users/me/delete (DELETE)',
     },
   });
 });
@@ -124,6 +126,7 @@ app.route('/api/v1/storage', storage);
 app.route('/api/v1/categories', categories);
 app.route('/api/v1/tags', tags);
 app.route('/api/v1/analytics', analytics);
+app.route('/api/v1', gdpr);
 
 // ============================================================================
 // 404 Handler
