@@ -28,7 +28,13 @@ export class D1Database {
       .prepare('SELECT * FROM tenants WHERE id = ?')
       .bind(id)
       .first();
-    return result as Tenant | null;
+    if (!result) return null;
+    return {
+      id: result.id,
+      name: result.name,
+      domain: result.domain,
+      createdAt: result.created_at,
+    } as Tenant;
   }
 
   async getTenantByDomain(domain: string): Promise<Tenant | null> {
@@ -36,7 +42,13 @@ export class D1Database {
       .prepare('SELECT * FROM tenants WHERE domain = ?')
       .bind(domain)
       .first();
-    return result as Tenant | null;
+    if (!result) return null;
+    return {
+      id: result.id,
+      name: result.name,
+      domain: result.domain,
+      createdAt: result.created_at,
+    } as Tenant;
   }
 
   // ============================================================================
@@ -56,7 +68,15 @@ export class D1Database {
       .prepare('SELECT * FROM users WHERE email = ?')
       .bind(email)
       .first();
-    return result || null;
+    if (!result) return null;
+    return {
+      id: result.id,
+      email: result.email,
+      password: result.password,
+      name: result.name,
+      tenantId: result.tenant_id,
+      createdAt: result.created_at,
+    };
   }
 
   async getUserById(id: string): Promise<any | null> {
@@ -64,7 +84,15 @@ export class D1Database {
       .prepare('SELECT * FROM users WHERE id = ?')
       .bind(id)
       .first();
-    return result || null;
+    if (!result) return null;
+    return {
+      id: result.id,
+      email: result.email,
+      password: result.password,
+      name: result.name,
+      tenantId: result.tenant_id,
+      createdAt: result.created_at,
+    };
   }
 
   async getUsersByTenant(tenantId: string): Promise<any[]> {

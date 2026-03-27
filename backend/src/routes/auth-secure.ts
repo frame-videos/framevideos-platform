@@ -54,14 +54,15 @@ function getClientIP(c: any): string {
 
 auth.post('/register', asyncHandler(async (c) => {
   const body = await c.req.json();
-  const { email, password, tenantId } = body;
+  const { email, password, name } = body;
+  let { tenantId } = body;
   const db = c.get('db');
   const rawDB = getRawDB(c);
   const clientIP = getClientIP(c);
   const userAgent = c.req.header('user-agent') || '';
 
   // Validation
-  validateRequired(body, ['email', 'password', 'tenantId']);
+  validateRequired(body, ['email', 'password']);
   validateEmail(email);
 
   // Validate password strength
@@ -83,11 +84,26 @@ auth.post('/register', asyncHandler(async (c) => {
   // Also validate via error-handler
   validatePasswordStrength(password);
 
-  // Validate tenant exists (with retry)
-  const tenant = await withRetry(() => db.getTenantById(tenantId));
-  
-  if (!tenant) {
-    throw new ValidationError('Invalid tenant ID', { tenantId });
+  // Resolve tenant: use provided tenantId or auto-create one
+  let tenant;
+  if (tenantId) {
+    // Validate tenant exists (with retry)
+    tenant = await withRetry(() => db.getTenantById(tenantId));
+    if (!tenant) {
+      throw new ValidationError('Invalid tenant ID', { tenantId });
+    }
+  } else {
+    // Auto-create tenant from user info
+    const emailDomain = email.split('@')[1] || 'default.com';
+    const tenantName = name || email.split('@')[0];
+    tenant = {
+      id: crypto.randomUUID(),
+      name: tenantName,
+      domain: emailDomain,
+      createdAt: new Date().toISOString(),
+    };
+    await withRetry(() => db.createTenant(tenant));
+    tenantId = tenant.id;
   }
 
   // Check if user exists (with retry)
