@@ -68,7 +68,7 @@ export default function VideoDropZone({
       <div
         className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${
           dragActive
-            ? 'border-blue-500 bg-blue-900 bg-opacity-20 scale-[1.02]'
+            ? 'border-primary-500 bg-primary-900 bg-opacity-20 scale-[1.02]'
             : 'border-gray-600 hover:border-gray-500'
         } ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
         onDragEnter={handleDrag}
@@ -117,7 +117,7 @@ export default function VideoDropZone({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200 hover:scale-105"
+                className="bg-primary-600 hover:bg-primary-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200 hover:scale-105"
               >
                 Escolher Arquivo
               </button>

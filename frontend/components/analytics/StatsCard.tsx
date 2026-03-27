@@ -39,8 +39,8 @@ export function StatsCard({ title, value, icon: Icon, trend, description }: Stat
           )}
         </div>
         <div className="ml-4">
-          <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-full">
-            <Icon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          <div className="p-3 bg-primary-100 dark:bg-primary-900/20 rounded-full">
+            <Icon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
           </div>
         </div>
       </div>

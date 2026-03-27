@@ -113,7 +113,7 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
       </div>
     );
   }
@@ -125,7 +125,7 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
           <h1 className="text-2xl font-bold text-white mb-4">Vídeo não encontrado</h1>
           <button
             onClick={() => router.push('/')}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
           >
             Voltar para Home
           </button>
@@ -198,7 +198,7 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
                     className="w-12 h-12 rounded-full"
                   />
                 ) : (
-                  <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-primary-600 flex items-center justify-center">
                     <User className="w-6 h-6 text-white" />
                   </div>
                 )}

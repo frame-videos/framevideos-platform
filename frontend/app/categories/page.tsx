@@ -143,12 +143,12 @@ export default function CategoriesPage() {
     <div className="min-h-screen bg-gray-900">
       <nav className="bg-gray-800 border-b border-gray-700 p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <Link href="/dashboard" className="text-2xl font-bold text-white hover:text-blue-400 transition">
+          <Link href="/dashboard" className="text-2xl font-bold text-white hover:text-primary-400 transition">
             🎬 Frame Videos
           </Link>
           <div className="flex items-center space-x-4">
             <Link href="/dashboard" className="text-gray-300 hover:text-white">Dashboard</Link>
-            <Link href="/categories" className="text-blue-400 font-semibold">Categorias</Link>
+            <Link href="/categories" className="text-primary-400 font-semibold">Categorias</Link>
             <Link href="/tags" className="text-gray-300 hover:text-white">Tags</Link>
             <Link href="/upload" className="text-gray-300 hover:text-white">Upload</Link>
           </div>
@@ -160,7 +160,7 @@ export default function CategoriesPage() {
           <h2 className="text-3xl font-bold text-white">📁 Categorias</h2>
           <button
             onClick={() => { setShowForm(!showForm); if (showForm) cancelEdit(); }}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition"
+            className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition"
           >
             {showForm ? 'Cancelar' : '+ Nova Categoria'}
           </button>
@@ -173,7 +173,7 @@ export default function CategoriesPage() {
             placeholder="🔍 Buscar categorias..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full md:w-96 bg-gray-800 text-white border border-gray-600 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500"
+            className="w-full md:w-96 bg-gray-800 text-white border border-gray-600 rounded-lg px-4 py-3 focus:outline-none focus:border-primary-500"
           />
         </div>
 
@@ -190,7 +190,7 @@ export default function CategoriesPage() {
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
+                  className="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-primary-500"
                   placeholder="Ex: Ação e Aventura"
                   required
                 />
@@ -200,7 +200,7 @@ export default function CategoriesPage() {
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
+                  className="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-primary-500"
                   rows={3}
                   placeholder="Descrição da categoria..."
                 />
@@ -225,7 +225,7 @@ export default function CategoriesPage() {
 
         {/* Category Detail View */}
         {selectedCategory && (
-          <div className="bg-gray-800 rounded-lg p-6 mb-8 border border-blue-600">
+          <div className="bg-gray-800 rounded-lg p-6 mb-8 border border-primary-600">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-2xl font-bold text-white">
                 📂 {selectedCategory.name}
@@ -265,7 +265,7 @@ export default function CategoriesPage() {
             </p>
             {!searchQuery && (
               <button onClick={() => setShowForm(true)}
-                className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition">
+                className="inline-block bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition">
                 Criar Primeira Categoria
               </button>
             )}
@@ -277,7 +277,7 @@ export default function CategoriesPage() {
                 key={category.id}
                 className={`bg-gray-800 rounded-lg p-6 border transition cursor-pointer ${
                   selectedCategory?.id === category.id
-                    ? 'border-blue-500 ring-2 ring-blue-500/30'
+                    ? 'border-primary-500 ring-2 ring-primary-500/30'
                     : 'border-gray-700 hover:border-gray-500'
                 }`}
                 onClick={() => handleCategoryClick(category)}
@@ -292,14 +292,14 @@ export default function CategoriesPage() {
                   <p className="text-gray-400 text-sm mb-4">{category.description}</p>
                 )}
                 {category.videoCount !== undefined && (
-                  <p className="text-sm text-blue-400 mb-3">
+                  <p className="text-sm text-primary-400 mb-3">
                     🎬 {category.videoCount} vídeo{category.videoCount !== 1 ? 's' : ''}
                   </p>
                 )}
                 <div className="flex space-x-2" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => handleEdit(category)}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
+                    className="flex-1 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
                   >
                     ✏️ Editar
                   </button>

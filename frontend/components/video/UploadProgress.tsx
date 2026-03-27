@@ -33,17 +33,17 @@ export default function UploadProgress({
   };
 
   return (
-    <div className="bg-blue-900 bg-opacity-30 border border-blue-700 rounded-lg p-6 space-y-4">
+    <div className="bg-primary-900 bg-opacity-30 border border-primary-700 rounded-lg p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-blue-200 font-semibold">Fazendo upload...</p>
-          <p className="text-blue-300 text-sm mt-1">
+          <p className="text-primary-200 font-semibold">Fazendo upload...</p>
+          <p className="text-primary-300 text-sm mt-1">
             {formatBytes(loaded)} de {formatBytes(total)}
           </p>
         </div>
         <div className="text-right">
-          <p className="text-2xl font-bold text-blue-400">{percentage}%</p>
-          <p className="text-blue-300 text-xs">
+          <p className="text-2xl font-bold text-primary-400">{percentage}%</p>
+          <p className="text-primary-300 text-xs">
             {formatBytes(speed)}/s
           </p>
         </div>
@@ -51,13 +51,13 @@ export default function UploadProgress({
 
       <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
         <div
-          className="bg-gradient-to-r from-blue-600 to-purple-600 h-3 rounded-full transition-all duration-300"
+          className="bg-gradient-to-r from-primary-600 to-purple-600 h-3 rounded-full transition-all duration-300"
           style={{ width: `${percentage}%` }}
         />
       </div>
 
       <div className="flex items-center justify-between text-sm">
-        <p className="text-blue-300">
+        <p className="text-primary-300">
           Tempo restante: <span className="font-semibold">{formatTime(timeRemaining)}</span>
         </p>
         <button

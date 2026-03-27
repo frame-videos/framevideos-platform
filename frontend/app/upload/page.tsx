@@ -126,7 +126,7 @@ export default function UploadPage() {
         <div className="mb-6">
           <button
             onClick={() => router.push('/dashboard')}
-            className="text-blue-400 hover:text-blue-300 flex items-center"
+            className="text-primary-400 hover:text-primary-300 flex items-center"
           >
             ← Voltar ao Dashboard
           </button>
@@ -146,7 +146,7 @@ export default function UploadPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 placeholder="Digite o título do vídeo"
               />
             </div>
@@ -159,7 +159,7 @@ export default function UploadPage() {
               <div
                 className={`border-2 border-dashed rounded-lg p-8 text-center transition ${
                   dragActive
-                    ? 'border-blue-500 bg-blue-900 bg-opacity-20'
+                    ? 'border-primary-500 bg-primary-900 bg-opacity-20'
                     : 'border-gray-600 hover:border-gray-500'
                 }`}
                 onDragEnter={handleDrag}
@@ -193,7 +193,7 @@ export default function UploadPage() {
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition"
+                        className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2 rounded-lg transition"
                       >
                         Escolher Arquivo
                       </button>
@@ -222,7 +222,7 @@ export default function UploadPage() {
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2">
                   <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    className="bg-primary-600 h-2 rounded-full transition-all duration-300"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
@@ -238,7 +238,7 @@ export default function UploadPage() {
             <button
               type="submit"
               disabled={uploading || !file}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition duration-200"
+              className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition duration-200"
             >
               {uploading ? 'Fazendo Upload...' : 'Fazer Upload'}
             </button>

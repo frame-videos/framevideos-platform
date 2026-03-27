@@ -16,7 +16,7 @@ export default function VideoCard({ video }: VideoCardProps) {
   return (
     <Link
       href={`/videos/${video.id}`}
-      className="bg-gray-800 rounded-lg overflow-hidden hover:ring-2 hover:ring-blue-500 transition"
+      className="bg-gray-800 rounded-lg overflow-hidden hover:ring-2 hover:ring-primary-500 transition"
     >
       <div className="aspect-video bg-gray-900 flex items-center justify-center">
         {video.thumbnail_url ? (

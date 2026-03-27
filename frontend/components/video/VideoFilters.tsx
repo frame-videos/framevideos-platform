@@ -46,7 +46,7 @@ export default function VideoFilters({
           <select
             value={selectedCategory}
             onChange={(e) => onCategoryChange(e.target.value)}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="">Todas</option>
             {categories.map((category) => (
@@ -65,7 +65,7 @@ export default function VideoFilters({
           <select
             value={selectedTag}
             onChange={(e) => onTagChange(e.target.value)}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="">Todas</option>
             {tags.map((tag) => (
@@ -85,7 +85,7 @@ export default function VideoFilters({
             <select
               value={sortBy}
               onChange={(e) => onSortChange(e.target.value as any, sortOrder)}
-              className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               <option value="date">Data</option>
               <option value="views">Visualizações</option>
@@ -119,7 +119,7 @@ export default function VideoFilters({
             <span className="text-sm text-gray-400">Filtros ativos:</span>
             
             {selectedCategory && (
-              <span className="px-3 py-1 bg-blue-900 text-blue-200 rounded-full text-sm flex items-center gap-2">
+              <span className="px-3 py-1 bg-primary-900 text-primary-200 rounded-full text-sm flex items-center gap-2">
                 Categoria: {categories.find(c => c.id === selectedCategory)?.name}
                 <button
                   onClick={() => onCategoryChange('')}

@@ -22,7 +22,7 @@ export default function DashboardPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
         <h1 className="text-2xl mb-4">Você precisa estar logado</h1>
-        <Link href="/auth/login" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg">
+        <Link href="/auth/login" className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2 rounded-lg">
           Fazer Login
         </Link>
       </div>
@@ -40,7 +40,7 @@ export default function DashboardPage() {
         <div className="space-x-4">
           <Link
             href="/upload"
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg inline-block"
+            className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2 rounded-lg inline-block"
           >
             + Upload Vídeo
           </Link>
@@ -99,7 +99,7 @@ export default function DashboardPage() {
             <p className="text-gray-400 mb-4">Nenhum vídeo ainda</p>
             <Link
               href="/upload"
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg inline-block"
+              className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2 rounded-lg inline-block"
             >
               Fazer Upload do Primeiro Vídeo
             </Link>

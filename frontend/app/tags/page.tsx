@@ -182,7 +182,7 @@ export default function TagsPage() {
     if (weight >= 5) return 'text-yellow-400 hover:text-yellow-300';
     if (weight >= 4) return 'text-purple-400 hover:text-purple-300';
     if (weight >= 3) return 'text-green-400 hover:text-green-300';
-    if (weight >= 2) return 'text-blue-400 hover:text-blue-300';
+    if (weight >= 2) return 'text-primary-400 hover:text-primary-300';
     return 'text-gray-400 hover:text-gray-200';
   };
 
@@ -203,13 +203,13 @@ export default function TagsPage() {
     <div className="min-h-screen bg-gray-900">
       <nav className="bg-gray-800 border-b border-gray-700 p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <Link href="/dashboard" className="text-2xl font-bold text-white hover:text-blue-400 transition">
+          <Link href="/dashboard" className="text-2xl font-bold text-white hover:text-primary-400 transition">
             🎬 Frame Videos
           </Link>
           <div className="flex items-center space-x-4">
             <Link href="/dashboard" className="text-gray-300 hover:text-white">Dashboard</Link>
             <Link href="/categories" className="text-gray-300 hover:text-white">Categorias</Link>
-            <Link href="/tags" className="text-blue-400 font-semibold">Tags</Link>
+            <Link href="/tags" className="text-primary-400 font-semibold">Tags</Link>
             <Link href="/upload" className="text-gray-300 hover:text-white">Upload</Link>
           </div>
         </div>
@@ -223,7 +223,7 @@ export default function TagsPage() {
               <button
                 onClick={() => setViewMode('cloud')}
                 className={`px-4 py-2 rounded-l-lg text-sm font-semibold transition ${
-                  viewMode === 'cloud' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                  viewMode === 'cloud' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'
                 }`}
               >
                 ☁️ Cloud
@@ -231,7 +231,7 @@ export default function TagsPage() {
               <button
                 onClick={() => setViewMode('list')}
                 className={`px-4 py-2 rounded-r-lg text-sm font-semibold transition ${
-                  viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                  viewMode === 'list' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'
                 }`}
               >
                 📋 Lista
@@ -239,7 +239,7 @@ export default function TagsPage() {
             </div>
             <button
               onClick={() => { setShowForm(!showForm); if (showForm) cancelEdit(); }}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition"
+              className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition"
             >
               {showForm ? 'Cancelar' : '+ Nova Tag'}
             </button>
@@ -255,7 +255,7 @@ export default function TagsPage() {
             onChange={(e) => handleSearchChange(e.target.value)}
             onBlur={() => setTimeout(() => setShowAutocomplete(false), 200)}
             onFocus={() => { if (autocompleteResults.length > 0) setShowAutocomplete(true); }}
-            className="w-full md:w-96 bg-gray-800 text-white border border-gray-600 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500"
+            className="w-full md:w-96 bg-gray-800 text-white border border-gray-600 rounded-lg px-4 py-3 focus:outline-none focus:border-primary-500"
           />
           {showAutocomplete && autocompleteResults.length > 0 && (
             <div className="absolute z-10 w-full md:w-96 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl max-h-60 overflow-y-auto">
@@ -286,7 +286,7 @@ export default function TagsPage() {
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
+                  className="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-primary-500"
                   placeholder="Ex: tutorial, gameplay, review"
                   required
                 />
@@ -309,7 +309,7 @@ export default function TagsPage() {
 
         {/* Tag Detail View */}
         {selectedTag && (
-          <div className="bg-gray-800 rounded-lg p-6 mb-8 border border-blue-600">
+          <div className="bg-gray-800 rounded-lg p-6 mb-8 border border-primary-600">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-2xl font-bold text-white">🏷️ {selectedTag.name}</h3>
               <button
@@ -372,7 +372,7 @@ export default function TagsPage() {
                 </p>
                 {!searchQuery && (
                   <button onClick={() => setShowForm(true)}
-                    className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition">
+                    className="inline-block bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition">
                     Criar Primeira Tag
                   </button>
                 )}
@@ -384,21 +384,21 @@ export default function TagsPage() {
                     key={tag.id}
                     className={`bg-gray-800 rounded-lg px-4 py-3 border transition flex items-center space-x-3 cursor-pointer ${
                       selectedTag?.id === tag.id
-                        ? 'border-blue-500 ring-2 ring-blue-500/30'
+                        ? 'border-primary-500 ring-2 ring-primary-500/30'
                         : 'border-gray-700 hover:border-gray-500'
                     }`}
                     onClick={() => handleTagClick(tag)}
                   >
                     <span className="text-white font-semibold">#{tag.name}</span>
                     {tag.videoCount !== undefined && (
-                      <span className="text-xs text-blue-400 bg-blue-900/30 px-2 py-0.5 rounded-full">
+                      <span className="text-xs text-primary-400 bg-primary-900/30 px-2 py-0.5 rounded-full">
                         {tag.videoCount}
                       </span>
                     )}
                     <div className="flex space-x-1 ml-2" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => handleEdit(tag)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-semibold transition"
+                        className="bg-primary-600 hover:bg-primary-700 text-white px-3 py-1 rounded text-xs font-semibold transition"
                       >
                         ✏️
                       </button>

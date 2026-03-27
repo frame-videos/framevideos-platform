@@ -37,7 +37,7 @@ export default function VideoSearch({ onSearch, initialQuery = '' }: VideoSearch
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar vídeos por título ou descrição..."
-          className="w-full px-4 py-3 pl-12 pr-24 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-4 py-3 pl-12 pr-24 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
         />
         
         <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
@@ -82,7 +82,7 @@ export default function VideoSearch({ onSearch, initialQuery = '' }: VideoSearch
           
           <button
             type="submit"
-            className="px-4 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition"
+            className="px-4 py-1 bg-primary-600 hover:bg-primary-700 text-white rounded transition"
           >
             Buscar
           </button>
