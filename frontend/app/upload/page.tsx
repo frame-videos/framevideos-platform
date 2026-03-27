@@ -72,7 +72,7 @@ export default function UploadPage() {
       return;
     }
 
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('auth_token');
     if (!token) {
       router.push('/auth/login');
       return;
@@ -110,7 +110,8 @@ export default function UploadPage() {
         setUploading(false);
       });
 
-      xhr.open('POST', '/api/v1/videos/upload');
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.framevideos.com/api/v1';
+      xhr.open('POST', `${API_URL}/videos/upload`);
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.send(formData);
 
