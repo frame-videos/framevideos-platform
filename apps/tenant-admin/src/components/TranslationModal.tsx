@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
-import { ALL_LOCALES, LOCALE_FLAGS, LOCALE_NAMES } from './TranslationBadges';
+import { ALL_LOCALES, LOCALE_LABELS, LOCALE_NAMES } from './TranslationBadges';
 
 type ContentType = 'categories' | 'tags' | 'videos' | 'performers' | 'channels' | 'pages';
 
@@ -251,7 +251,7 @@ export function TranslationModal({
                           : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                     }`}
                   >
-                    <span>{LOCALE_FLAGS[loc]}</span>
+                    <span className="text-xs font-bold">{LOCALE_LABELS[loc] ?? loc.toUpperCase()}</span>
                     <span className="hidden sm:inline">{LOCALE_NAMES[loc] ?? loc}</span>
                     {hasTranslation && <span className="text-xs">✓</span>}
                   </button>

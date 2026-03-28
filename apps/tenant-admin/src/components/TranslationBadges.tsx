@@ -1,21 +1,22 @@
-// TranslationBadges — shows flag badges for translated/untranslated locales
+// TranslationBadges — shows locale code badges for translated/untranslated locales
 // Reusable across all content type listings
+// Uses text labels instead of emoji flags for universal font compatibility
 
-const LOCALE_FLAGS: Record<string, string> = {
-  pt: '🇧🇷',
-  en: '🇺🇸',
-  es: '🇪🇸',
-  fr: '🇫🇷',
-  de: '🇩🇪',
-  it: '🇮🇹',
-  ja: '🇯🇵',
-  zh: '🇨🇳',
-  ko: '🇰🇷',
-  ru: '🇷🇺',
-  nl: '🇳🇱',
-  pl: '🇵🇱',
-  tr: '🇹🇷',
-  ar: '🇸🇦',
+const LOCALE_LABELS: Record<string, string> = {
+  pt: 'PT',
+  en: 'EN',
+  es: 'ES',
+  fr: 'FR',
+  de: 'DE',
+  it: 'IT',
+  ja: 'JA',
+  zh: 'ZH',
+  ko: 'KO',
+  ru: 'RU',
+  nl: 'NL',
+  pl: 'PL',
+  tr: 'TR',
+  ar: 'AR',
 };
 
 const LOCALE_NAMES: Record<string, string> = {
@@ -70,11 +71,11 @@ export function TranslationBadges({
   }
 
   return (
-    <div className="flex flex-wrap gap-0.5">
+    <div className="flex flex-wrap gap-1">
       {localesToShow.map((locale) => {
         const isTranslated = translated.has(locale);
         const isDefault = locale === defaultLocale;
-        const flag = LOCALE_FLAGS[locale] ?? locale;
+        const label = LOCALE_LABELS[locale] ?? locale.toUpperCase();
         const name = LOCALE_NAMES[locale] ?? locale;
 
         return (
@@ -84,15 +85,17 @@ export function TranslationBadges({
             onClick={() => onLocaleClick?.(locale)}
             disabled={!onLocaleClick}
             title={`${name}${isTranslated ? ' ✓' : ' (sem tradução)'}${isDefault ? ' — padrão' : ''}`}
-            className={`text-sm leading-none transition-all ${
-              onLocaleClick ? 'cursor-pointer hover:scale-110' : 'cursor-default'
+            className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold leading-none transition-all ${
+              onLocaleClick ? 'cursor-pointer hover:scale-105' : 'cursor-default'
             } ${
               isTranslated
-                ? 'opacity-100'
-                : 'opacity-25 grayscale'
+                ? isDefault
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-green-600/80 text-white'
+                : 'bg-gray-700/50 text-gray-500'
             }`}
           >
-            {flag}
+            {label}
           </button>
         );
       })}
@@ -100,4 +103,4 @@ export function TranslationBadges({
   );
 }
 
-export { LOCALE_FLAGS, LOCALE_NAMES };
+export { LOCALE_LABELS, LOCALE_NAMES };
