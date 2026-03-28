@@ -206,9 +206,7 @@ export function LoginPage() {
           </div>
         </form>
 
-        <p className="text-center text-gray-600 text-xs mt-6">
-          Powered by <a href="https://framevideos.com" target="_blank" rel="noopener" className="text-purple-500 hover:text-purple-400">Frame Videos</a>
-        </p>
+        {/* White-label: no branding in admin panel */}
       </div>
     </div>
   );
