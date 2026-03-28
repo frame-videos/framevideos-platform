@@ -1,0 +1,106 @@
+---
+---
+
+<nav class="fixed top-0 left-0 right-0 z-40 border-b border-border/50 bg-dark-950/80 backdrop-blur-xl">
+  <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <div class="flex h-16 items-center justify-between">
+      <!-- Logo -->
+      <a href="/" class="flex items-center gap-2">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600">
+          <svg class="h-5 w-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="8,4 8,20 20,12" />
+          </svg>
+        </div>
+        <span class="text-lg font-bold text-white">Frame Videos</span>
+      </a>
+
+      <!-- Desktop Nav -->
+      <div class="hidden md:flex items-center gap-8">
+        <a href="#features" class="text-sm text-dark-300 hover:text-white transition-colors">
+          Recursos
+        </a>
+        <a href="#pricing" class="text-sm text-dark-300 hover:text-white transition-colors">
+          Preços
+        </a>
+        <a href="/login" class="text-sm text-dark-300 hover:text-white transition-colors">
+          Entrar
+        </a>
+        <a href="/signup" class="inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-dark-950 bg-primary-600 hover:bg-primary-700 text-white shadow-lg shadow-primary-600/25 hover:shadow-primary-600/40 px-3 py-1.5 text-sm">
+          Começar Grátis
+        </a>
+      </div>
+
+      <!-- Mobile menu button -->
+      <button
+        id="mobile-menu-btn"
+        class="md:hidden text-dark-300 hover:text-white cursor-pointer"
+        aria-label="Menu"
+      >
+        <svg id="menu-icon-open" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+        <svg id="menu-icon-close" class="h-6 w-6 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile Nav -->
+  <div
+    id="mobile-menu"
+    class="md:hidden border-t border-border/50 bg-dark-950/95 backdrop-blur-xl transition-all duration-300 overflow-hidden max-h-0"
+  >
+    <div class="flex flex-col gap-3 px-4">
+      <a href="#features" class="text-sm text-dark-300 hover:text-white transition-colors py-2 mobile-link">
+        Recursos
+      </a>
+      <a href="#pricing" class="text-sm text-dark-300 hover:text-white transition-colors py-2 mobile-link">
+        Preços
+      </a>
+      <a href="/login" class="text-sm text-dark-300 hover:text-white transition-colors py-2 mobile-link">
+        Entrar
+      </a>
+      <a href="/signup" class="mobile-link">
+        <span class="inline-flex w-full items-center justify-center gap-2 rounded-lg font-semibold transition-all duration-200 bg-primary-600 hover:bg-primary-700 text-white shadow-lg shadow-primary-600/25 hover:shadow-primary-600/40 px-3 py-1.5 text-sm">
+          Começar Grátis
+        </span>
+      </a>
+    </div>
+  </div>
+</nav>
+
+<script>
+  const btn = document.getElementById('mobile-menu-btn');
+  const menu = document.getElementById('mobile-menu');
+  const iconOpen = document.getElementById('menu-icon-open');
+  const iconClose = document.getElementById('menu-icon-close');
+
+  let isOpen = false;
+
+  btn?.addEventListener('click', () => {
+    isOpen = !isOpen;
+    if (isOpen) {
+      menu?.classList.remove('max-h-0');
+      menu?.classList.add('max-h-64', 'py-4');
+      iconOpen?.classList.add('hidden');
+      iconClose?.classList.remove('hidden');
+    } else {
+      menu?.classList.add('max-h-0');
+      menu?.classList.remove('max-h-64', 'py-4');
+      iconOpen?.classList.remove('hidden');
+      iconClose?.classList.add('hidden');
+    }
+  });
+
+  // Fecha o menu ao clicar em um link mobile
+  document.querySelectorAll('.mobile-link').forEach((link) => {
+    link.addEventListener('click', () => {
+      isOpen = false;
+      menu?.classList.add('max-h-0');
+      menu?.classList.remove('max-h-64', 'py-4');
+      iconOpen?.classList.remove('hidden');
+      iconClose?.classList.add('hidden');
+    });
+  });
+</script>

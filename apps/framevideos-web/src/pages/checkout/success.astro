@@ -1,0 +1,12 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { CheckoutSuccessRedirect } from '@/components/react/CheckoutSuccessRedirect';
+
+const sessionId = Astro.url.searchParams.get('session_id') || undefined;
+---
+
+<BaseLayout title="Pagamento Confirmado — Frame Videos">
+  <div class="flex min-h-screen items-center justify-center bg-dark-950 px-4">
+    <CheckoutSuccessRedirect sessionId={sessionId} client:load />
+  </div>
+</BaseLayout>

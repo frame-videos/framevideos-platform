@@ -39,7 +39,7 @@ jobs:
 
       - name: Build web
         working-directory: apps/framevideos-web
-        run: npx vite build
+        run: npx astro build
         env:
           VITE_API_URL: https://api.framevideos.com
 
