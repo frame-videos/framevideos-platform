@@ -96,11 +96,13 @@ export function TagsPage() {
 
       {/* Add tags */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 mb-6">
-        <label className="block text-sm font-medium text-gray-300 mb-2">
+        <label htmlFor="field-bulkTags" className="block text-sm font-medium text-gray-300 mb-2">
           Adicionar Tags
         </label>
         <div className="flex flex-col sm:flex-row gap-3">
           <input
+            id="field-bulkTags"
+            name="bulkTags"
             type="text"
             value={bulkInput}
             onChange={(e) => setBulkInput(e.target.value)}
@@ -127,6 +129,8 @@ export function TagsPage() {
       {/* Search */}
       <div className="flex gap-3 mb-6">
         <input
+          id="field-searchTags"
+          name="searchTags"
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}

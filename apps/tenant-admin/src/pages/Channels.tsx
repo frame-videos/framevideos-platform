@@ -252,8 +252,10 @@ export function ChannelsPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className={labelClass}>Nome *</label>
+                <label htmlFor="field-name" className={labelClass}>Nome *</label>
                 <input
+                  id="field-name"
+                  name="name"
                   type="text"
                   value={form.name}
                   onChange={(e) => handleNameChange(e.target.value)}
@@ -264,8 +266,10 @@ export function ChannelsPage() {
               </div>
 
               <div>
-                <label className={labelClass}>Slug</label>
+                <label htmlFor="field-slug" className={labelClass}>Slug</label>
                 <input
+                  id="field-slug"
+                  name="slug"
                   type="text"
                   value={form.slug}
                   onChange={(e) => handleSlugChange(e.target.value)}
@@ -275,8 +279,10 @@ export function ChannelsPage() {
               </div>
 
               <div>
-                <label className={labelClass}>Descrição</label>
+                <label htmlFor="field-description" className={labelClass}>Descrição</label>
                 <textarea
+                  id="field-description"
+                  name="description"
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   rows={3}
@@ -286,8 +292,10 @@ export function ChannelsPage() {
               </div>
 
               <div>
-                <label className={labelClass}>URL do Logo</label>
+                <label htmlFor="field-logoUrl" className={labelClass}>URL do Logo</label>
                 <input
+                  id="field-logoUrl"
+                  name="logoUrl"
                   type="url"
                   value={form.logoUrl}
                   onChange={(e) => setForm((f) => ({ ...f, logoUrl: e.target.value }))}

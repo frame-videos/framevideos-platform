@@ -159,8 +159,10 @@ export function AdPlacementsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">Nome *</label>
+              <label htmlFor="field-placementName" className="block text-sm font-medium text-gray-300 mb-1.5">Nome *</label>
               <input
+                id="field-placementName"
+                name="placementName"
                 type="text"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
@@ -170,8 +172,10 @@ export function AdPlacementsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">Posição *</label>
+              <label htmlFor="field-position" className="block text-sm font-medium text-gray-300 mb-1.5">Posição *</label>
               <select
+                id="field-position"
+                name="position"
                 value={formPosition}
                 onChange={(e) => handlePositionChange(e.target.value)}
                 className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
@@ -185,8 +189,10 @@ export function AdPlacementsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">Largura (px)</label>
+              <label htmlFor="field-width" className="block text-sm font-medium text-gray-300 mb-1.5">Largura (px)</label>
               <input
+                id="field-width"
+                name="width"
                 type="number"
                 value={formWidth}
                 onChange={(e) => setFormWidth(parseInt(e.target.value) || 0)}
@@ -196,8 +202,10 @@ export function AdPlacementsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">Altura (px)</label>
+              <label htmlFor="field-height" className="block text-sm font-medium text-gray-300 mb-1.5">Altura (px)</label>
               <input
+                id="field-height"
+                name="height"
                 type="number"
                 value={formHeight}
                 onChange={(e) => setFormHeight(parseInt(e.target.value) || 0)}

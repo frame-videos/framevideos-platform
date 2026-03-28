@@ -117,10 +117,12 @@ export function AdCampaignFormPage() {
 
       <form onSubmit={handleSubmit} className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-5">
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1.5">
+          <label htmlFor="field-name" className="block text-sm font-medium text-gray-300 mb-1.5">
             Nome da campanha *
           </label>
           <input
+            id="field-name"
+            name="name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -132,10 +134,12 @@ export function AdCampaignFormPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1.5">
+          <label htmlFor="field-budget" className="block text-sm font-medium text-gray-300 mb-1.5">
             Orçamento (R$) *
           </label>
           <input
+            id="field-budget"
+            name="budget"
             type="number"
             value={budgetReais}
             onChange={(e) => setBudgetReais(e.target.value)}
@@ -150,10 +154,12 @@ export function AdCampaignFormPage() {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+            <label htmlFor="field-startDate" className="block text-sm font-medium text-gray-300 mb-1.5">
               Data de início *
             </label>
             <input
+              id="field-startDate"
+              name="startDate"
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
@@ -162,10 +168,12 @@ export function AdCampaignFormPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+            <label htmlFor="field-endDate" className="block text-sm font-medium text-gray-300 mb-1.5">
               Data de término
             </label>
             <input
+              id="field-endDate"
+              name="endDate"
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}

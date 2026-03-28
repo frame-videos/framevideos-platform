@@ -343,7 +343,7 @@ export function VideoFormPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm font-medium text-gray-300">Título *</label>
+              <label htmlFor="field-title" className="text-sm font-medium text-gray-300">Título *</label>
               {isEditing && (
                 <button
                   type="button"
@@ -360,18 +360,18 @@ export function VideoFormPage() {
                 </button>
               )}
             </div>
-            <input type="text" value={title} onChange={(e) => handleTitleChange(e.target.value)} required className={inputClass} placeholder="Título do vídeo" />
+            <input id="field-title" name="title" type="text" value={title} onChange={(e) => handleTitleChange(e.target.value)} required className={inputClass} placeholder="Título do vídeo" />
           </div>
           <div>
-            <label className={labelClass}>Slug</label>
-            <input type="text" value={slug} onChange={(e) => { setSlug(e.target.value); setSlugManual(true); }} className={inputClass} placeholder="slug-do-video" />
+            <label htmlFor="field-slug" className={labelClass}>Slug</label>
+            <input id="field-slug" name="slug" type="text" value={slug} onChange={(e) => { setSlug(e.target.value); setSlugManual(true); }} className={inputClass} placeholder="slug-do-video" />
           </div>
         </div>
 
         {/* Description */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-sm font-medium text-gray-300">Descrição</label>
+            <label htmlFor="field-description" className="text-sm font-medium text-gray-300">Descrição</label>
             {isEditing && (
               <button
                 type="button"
@@ -388,18 +388,18 @@ export function VideoFormPage() {
               </button>
             )}
           </div>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className={inputClass} placeholder="Descrição do vídeo..." />
+          <textarea id="field-description" name="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className={inputClass} placeholder="Descrição do vídeo..." />
         </div>
 
         {/* URLs */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className={labelClass}>URL do Vídeo</label>
-            <input type="url" value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} className={inputClass} placeholder="https://..." />
+            <label htmlFor="field-videoUrl" className={labelClass}>URL do Vídeo</label>
+            <input id="field-videoUrl" name="videoUrl" type="url" value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} className={inputClass} placeholder="https://..." />
           </div>
           <div>
-            <label className={labelClass}>URL de Embed</label>
-            <input type="url" value={embedUrl} onChange={(e) => setEmbedUrl(e.target.value)} className={inputClass} placeholder="https://embed..." />
+            <label htmlFor="field-embedUrl" className={labelClass}>URL de Embed</label>
+            <input id="field-embedUrl" name="embedUrl" type="url" value={embedUrl} onChange={(e) => setEmbedUrl(e.target.value)} className={inputClass} placeholder="https://embed..." />
           </div>
         </div>
 
@@ -453,6 +453,8 @@ export function VideoFormPage() {
             {/* Fallback: manual URL */}
             <div className="mt-2">
               <input
+                id="field-thumbnailUrl"
+                name="thumbnailUrl"
                 type="url"
                 value={thumbnailUrl}
                 onChange={(e) => setThumbnailUrl(e.target.value)}
@@ -462,15 +464,15 @@ export function VideoFormPage() {
             </div>
           </div>
           <div>
-            <label className={labelClass}>Duração (segundos)</label>
-            <input type="number" value={durationSeconds} onChange={(e) => setDurationSeconds(e.target.value ? Number(e.target.value) : '')} min={0} className={inputClass} placeholder="360" />
+            <label htmlFor="field-duration" className={labelClass}>Duração (segundos)</label>
+            <input id="field-duration" name="duration" type="number" value={durationSeconds} onChange={(e) => setDurationSeconds(e.target.value ? Number(e.target.value) : '')} min={0} className={inputClass} placeholder="360" />
           </div>
         </div>
 
         {/* Status */}
         <div>
-          <label className={labelClass}>Status</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value as 'draft' | 'published' | 'archived')} className={inputClass}>
+          <label htmlFor="field-status" className={labelClass}>Status</label>
+          <select id="field-status" name="status" value={status} onChange={(e) => setStatus(e.target.value as 'draft' | 'published' | 'archived')} className={inputClass}>
             <option value="draft">Rascunho</option>
             <option value="published">Publicado</option>
             <option value="archived">Arquivado</option>
@@ -554,8 +556,8 @@ export function VideoFormPage() {
 
         {/* Channel */}
         <div>
-          <label className={labelClass}>Canal</label>
-          <select value={channelId} onChange={(e) => setChannelId(e.target.value)} className={inputClass}>
+          <label htmlFor="field-channelId" className={labelClass}>Canal</label>
+          <select id="field-channelId" name="channelId" value={channelId} onChange={(e) => setChannelId(e.target.value)} className={inputClass}>
             <option value="">Nenhum canal</option>
             {channels.map((ch) => (
               <option key={ch.id} value={ch.id}>{ch.name}</option>

@@ -102,6 +102,8 @@ export function AdsPage() {
       {/* Filters */}
       <div className="flex items-center gap-3">
         <select
+          id="field-statusFilter"
+          name="statusFilter"
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
           className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200"

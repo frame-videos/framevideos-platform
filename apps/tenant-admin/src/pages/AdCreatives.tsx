@@ -182,8 +182,10 @@ export function AdCreativesPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">Nome *</label>
+              <label htmlFor="field-creativeName" className="block text-sm font-medium text-gray-300 mb-1.5">Nome *</label>
               <input
+                id="field-creativeName"
+                name="creativeName"
                 type="text"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
@@ -193,8 +195,10 @@ export function AdCreativesPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">Tipo *</label>
+              <label htmlFor="field-creativeType" className="block text-sm font-medium text-gray-300 mb-1.5">Tipo *</label>
               <select
+                id="field-creativeType"
+                name="creativeType"
                 value={formType}
                 onChange={(e) => setFormType(e.target.value as 'image' | 'video' | 'html')}
                 className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
@@ -207,8 +211,10 @@ export function AdCreativesPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">URL do Criativo *</label>
+            <label htmlFor="field-contentUrl" className="block text-sm font-medium text-gray-300 mb-1.5">URL do Criativo *</label>
             <input
+              id="field-contentUrl"
+              name="contentUrl"
               type="url"
               value={formContentUrl}
               onChange={(e) => setFormContentUrl(e.target.value)}
@@ -220,8 +226,10 @@ export function AdCreativesPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">URL de Destino *</label>
+            <label htmlFor="field-targetUrl" className="block text-sm font-medium text-gray-300 mb-1.5">URL de Destino *</label>
             <input
+              id="field-targetUrl"
+              name="targetUrl"
               type="url"
               value={formTargetUrl}
               onChange={(e) => setFormTargetUrl(e.target.value)}

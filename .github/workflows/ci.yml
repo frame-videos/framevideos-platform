@@ -13,8 +13,10 @@ concurrency:
 
 jobs:
   ci:
-    name: Lint, Typecheck & Test
+    name: Typecheck & Build
     runs-on: ubuntu-latest
+    # Lint is run locally (typescript-eslint not in lockfile).
+    # Typecheck (tsc --noEmit) already catches type errors in CI.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,6 +52,6 @@ jobs:
         run: cd apps/framevideos-web && npx vite build
         continue-on-error: false
 
-      - name: Test Summary
+      - name: Build Summary
         if: always()
         run: echo "✅ CI pipeline complete"

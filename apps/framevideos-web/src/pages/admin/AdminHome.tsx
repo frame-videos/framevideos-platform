@@ -6,6 +6,8 @@ interface AdminStats {
   totalTenants: number;
   totalUsers: number;
   activeSites: number;
+  totalVideos: number;
+  mrrCents: number;
 }
 
 interface RecentTenant {
@@ -28,18 +30,21 @@ export function AdminHome() {
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        const [tenantsRes, usersRes] = await Promise.all([
+        const [tenantsRes, statsRes] = await Promise.all([
           fetch('/api/v1/admin/tenants?limit=10', { headers }).then(r => r.json()).catch(() => ({ data: [], pagination: { total: 0 } })),
-          fetch('/api/v1/admin/users?limit=1', { headers }).then(r => r.json()).catch(() => ({ pagination: { total: 0 } })),
+          fetch('/api/v1/admin/stats', { headers }).then(r => r.json()).catch(() => ({ data: { totalTenants: 0, totalUsers: 0, totalVideos: 0, mrrCents: 0 } })),
         ]);
 
         const tenantList = tenantsRes?.data ?? [];
         const activeSites = tenantList.filter((t: RecentTenant) => t.status === 'active').length;
+        const s = statsRes?.data ?? {};
 
         setStats({
-          totalTenants: tenantsRes?.pagination?.total ?? tenantList.length,
-          totalUsers: usersRes?.pagination?.total ?? 0,
+          totalTenants: s.totalTenants ?? tenantsRes?.pagination?.total ?? 0,
+          totalUsers: s.totalUsers ?? 0,
           activeSites,
+          totalVideos: s.totalVideos ?? 0,
+          mrrCents: s.mrrCents ?? 0,
         });
         setTenants(tenantList.slice(0, 5));
       } catch (err) {
@@ -63,8 +68,8 @@ export function AdminHome() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="bg-dark-900 rounded-xl p-5 border border-dark-800 animate-pulse">
               <div className="h-4 bg-dark-800 rounded w-20 mb-3" />
               <div className="h-8 bg-dark-800 rounded w-16" />
@@ -72,7 +77,17 @@ export function AdminHome() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          <StatsCard
+            title="MRR"
+            value={`$${((stats?.mrrCents ?? 0) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`}
+            iconColor="bg-green-600/20 text-green-400"
+            icon={
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            }
+          />
           <StatsCard
             title="Total de Tenants"
             value={formatNumber(stats?.totalTenants ?? 0)}
@@ -93,9 +108,19 @@ export function AdminHome() {
             }
           />
           <StatsCard
+            title="Vídeos Totais"
+            value={formatNumber(stats?.totalVideos ?? 0)}
+            iconColor="bg-purple-600/20 text-purple-400"
+            icon={
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            }
+          />
+          <StatsCard
             title="Sites Ativos"
             value={formatNumber(stats?.activeSites ?? 0)}
-            iconColor="bg-green-600/20 text-green-400"
+            iconColor="bg-yellow-600/20 text-yellow-400"
             icon={
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />

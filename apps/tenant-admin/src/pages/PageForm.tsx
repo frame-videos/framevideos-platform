@@ -137,8 +137,10 @@ export function PageFormPage() {
         {/* Title & Slug */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className={labelClass}>Título *</label>
+            <label htmlFor="field-title" className={labelClass}>Título *</label>
             <input
+              id="field-title"
+              name="title"
               type="text"
               value={title}
               onChange={(e) => handleTitleChange(e.target.value)}
@@ -148,8 +150,10 @@ export function PageFormPage() {
             />
           </div>
           <div>
-            <label className={labelClass}>Slug</label>
+            <label htmlFor="field-slug" className={labelClass}>Slug</label>
             <input
+              id="field-slug"
+              name="slug"
               type="text"
               value={slug}
               onChange={(e) => {
@@ -164,8 +168,10 @@ export function PageFormPage() {
 
         {/* Status */}
         <div>
-          <label className={labelClass}>Status</label>
+          <label htmlFor="field-status" className={labelClass}>Status</label>
           <select
+            id="field-status"
+            name="status"
             value={status}
             onChange={(e) => setStatus(e.target.value as 'draft' | 'published')}
             className={inputClass}
@@ -177,8 +183,10 @@ export function PageFormPage() {
 
         {/* Content */}
         <div>
-          <label className={labelClass}>Conteúdo (Markdown)</label>
+          <label htmlFor="field-content" className={labelClass}>Conteúdo (Markdown)</label>
           <textarea
+            id="field-content"
+            name="content"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             rows={20}

@@ -120,8 +120,10 @@ export function SettingsPage() {
           <h2 className="text-lg font-semibold mb-4">Geral</h2>
           <div className="space-y-4">
             <div>
-              <label className={labelClass}>Nome do Site *</label>
+              <label htmlFor="field-siteName" className={labelClass}>Nome do Site *</label>
               <input
+                id="field-siteName"
+                name="siteName"
                 type="text"
                 value={settings.siteName}
                 onChange={(e) => updateField('siteName', e.target.value)}
@@ -133,8 +135,10 @@ export function SettingsPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className={labelClass}>URL do Logo</label>
+                <label htmlFor="field-logoUrl" className={labelClass}>URL do Logo</label>
                 <input
+                  id="field-logoUrl"
+                  name="logoUrl"
                   type="url"
                   value={settings.logoUrl}
                   onChange={(e) => updateField('logoUrl', e.target.value)}
@@ -153,8 +157,10 @@ export function SettingsPage() {
                 )}
               </div>
               <div>
-                <label className={labelClass}>URL do Favicon</label>
+                <label htmlFor="field-faviconUrl" className={labelClass}>URL do Favicon</label>
                 <input
+                  id="field-faviconUrl"
+                  name="faviconUrl"
                   type="url"
                   value={settings.faviconUrl}
                   onChange={(e) => updateField('faviconUrl', e.target.value)}
@@ -181,7 +187,7 @@ export function SettingsPage() {
           <h2 className="text-lg font-semibold mb-4">Cores</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className={labelClass}>Cor Primária</label>
+              <label htmlFor="field-primaryColor" className={labelClass}>Cor Primária</label>
               <div className="flex items-center gap-3">
                 <input
                   type="color"
@@ -190,6 +196,8 @@ export function SettingsPage() {
                   className="w-10 h-10 rounded-lg border border-gray-700 bg-transparent cursor-pointer"
                 />
                 <input
+                  id="field-primaryColor"
+                  name="primaryColor"
                   type="text"
                   value={settings.primaryColor}
                   onChange={(e) => updateField('primaryColor', e.target.value)}
@@ -200,7 +208,7 @@ export function SettingsPage() {
               </div>
             </div>
             <div>
-              <label className={labelClass}>Cor Secundária</label>
+              <label htmlFor="field-secondaryColor" className={labelClass}>Cor Secundária</label>
               <div className="flex items-center gap-3">
                 <input
                   type="color"
@@ -209,6 +217,8 @@ export function SettingsPage() {
                   className="w-10 h-10 rounded-lg border border-gray-700 bg-transparent cursor-pointer"
                 />
                 <input
+                  id="field-secondaryColor"
+                  name="secondaryColor"
                   type="text"
                   value={settings.secondaryColor}
                   onChange={(e) => updateField('secondaryColor', e.target.value)}
@@ -237,8 +247,10 @@ export function SettingsPage() {
         <section className="bg-gray-900 rounded-xl border border-gray-800 p-6">
           <h2 className="text-lg font-semibold mb-4">Analytics</h2>
           <div>
-            <label className={labelClass}>Google Analytics ID</label>
+            <label htmlFor="field-googleAnalyticsId" className={labelClass}>Google Analytics ID</label>
             <input
+              id="field-googleAnalyticsId"
+              name="googleAnalyticsId"
               type="text"
               value={settings.googleAnalyticsId}
               onChange={(e) => updateField('googleAnalyticsId', e.target.value)}
@@ -256,8 +268,10 @@ export function SettingsPage() {
           <h2 className="text-lg font-semibold mb-4">Código Personalizado</h2>
           <div className="space-y-4">
             <div>
-              <label className={labelClass}>CSS Personalizado</label>
+              <label htmlFor="field-customCss" className={labelClass}>CSS Personalizado</label>
               <textarea
+                id="field-customCss"
+                name="customCss"
                 value={settings.customCss}
                 onChange={(e) => updateField('customCss', e.target.value)}
                 rows={6}
@@ -267,8 +281,10 @@ export function SettingsPage() {
             </div>
 
             <div>
-              <label className={labelClass}>Scripts no &lt;head&gt;</label>
+              <label htmlFor="field-customScriptsHead" className={labelClass}>Scripts no &lt;head&gt;</label>
               <textarea
+                id="field-customScriptsHead"
+                name="customScriptsHead"
                 value={settings.customScriptsHead}
                 onChange={(e) => updateField('customScriptsHead', e.target.value)}
                 rows={4}
@@ -281,8 +297,10 @@ export function SettingsPage() {
             </div>
 
             <div>
-              <label className={labelClass}>Scripts no &lt;body&gt;</label>
+              <label htmlFor="field-customScriptsBody" className={labelClass}>Scripts no &lt;body&gt;</label>
               <textarea
+                id="field-customScriptsBody"
+                name="customScriptsBody"
                 value={settings.customScriptsBody}
                 onChange={(e) => updateField('customScriptsBody', e.target.value)}
                 rows={4}
@@ -318,8 +336,10 @@ export function SettingsPage() {
         {localeSettings.supportedLocales.length > 0 && (
           <div className="space-y-4">
             <div>
-              <label className={labelClass}>Idioma Padrão</label>
+              <label htmlFor="field-defaultLocale" className={labelClass}>Idioma Padrão</label>
               <select
+                id="field-defaultLocale"
+                name="defaultLocale"
                 value={localeSettings.defaultLocale}
                 onChange={(e) => {
                   const newDefault = e.target.value;

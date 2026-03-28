@@ -162,6 +162,8 @@ export function PerformersPage() {
       {/* Search */}
       <div className="flex gap-3 mb-6">
         <input
+          id="field-searchPerformers"
+          name="searchPerformers"
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -273,8 +275,10 @@ export function PerformersPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className={labelClass}>Nome *</label>
+                <label htmlFor="field-name" className={labelClass}>Nome *</label>
                 <input
+                  id="field-name"
+                  name="name"
                   type="text"
                   value={form.name}
                   onChange={(e) => handleNameChange(e.target.value)}
@@ -285,8 +289,10 @@ export function PerformersPage() {
               </div>
 
               <div>
-                <label className={labelClass}>Slug</label>
+                <label htmlFor="field-slug" className={labelClass}>Slug</label>
                 <input
+                  id="field-slug"
+                  name="slug"
                   type="text"
                   value={form.slug}
                   onChange={(e) => handleSlugChange(e.target.value)}
@@ -296,8 +302,10 @@ export function PerformersPage() {
               </div>
 
               <div>
-                <label className={labelClass}>Bio</label>
+                <label htmlFor="field-bio" className={labelClass}>Bio</label>
                 <textarea
+                  id="field-bio"
+                  name="bio"
                   value={form.bio}
                   onChange={(e) => setForm((f) => ({ ...f, bio: e.target.value }))}
                   rows={4}
@@ -307,8 +315,10 @@ export function PerformersPage() {
               </div>
 
               <div>
-                <label className={labelClass}>URL do Avatar</label>
+                <label htmlFor="field-avatarUrl" className={labelClass}>URL do Avatar</label>
                 <input
+                  id="field-avatarUrl"
+                  name="avatarUrl"
                   type="url"
                   value={form.avatarUrl}
                   onChange={(e) => setForm((f) => ({ ...f, avatarUrl: e.target.value }))}

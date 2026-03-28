@@ -23,6 +23,7 @@ import { Tenants } from '@/pages/admin/Tenants';
 import { Plans } from '@/pages/admin/Plans';
 import { Users } from '@/pages/admin/Users';
 import { AdminCredits } from '@/pages/admin/AdminCredits';
+import { Revenue } from '@/pages/admin/Revenue';
 
 // Layouts
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -68,6 +69,7 @@ export function App() {
           <Route path="/admin/plans" element={<Plans />} />
           <Route path="/admin/users" element={<Users />} />
           <Route path="/admin/credits" element={<AdminCredits />} />
+          <Route path="/admin/revenue" element={<Revenue />} />
         </Route>
       </Route>
 
