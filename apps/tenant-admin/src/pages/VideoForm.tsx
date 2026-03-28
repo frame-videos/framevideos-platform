@@ -58,6 +58,13 @@ export function VideoFormPage() {
   const [performers, setPerformers] = useState<PerformerOption[]>([]);
   const [channels, setChannels] = useState<ChannelOption[]>([]);
 
+  // AI generation
+  const [generatingTitle, setGeneratingTitle] = useState(false);
+  const [generatingDescription, setGeneratingDescription] = useState(false);
+  const [generatingKeywords, setGeneratingKeywords] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiSuccess, setAiSuccess] = useState('');
+
   // Translations
   const [showTranslations, setShowTranslations] = useState(false);
   const [translations, setTranslations] = useState<TranslationData[]>([]);
@@ -181,6 +188,79 @@ export function VideoFormPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleGenerateTitle = async () => {
+    if (!id) return;
+    setGeneratingTitle(true);
+    setAiError('');
+    setAiSuccess('');
+    try {
+      const result = await api<{ title: string; creditsUsed: number }>('/api/v1/ai/generate/title', {
+        method: 'POST',
+        body: { videoId: id },
+      });
+      setTitle(result.title);
+      setAiSuccess(`Título gerado! (${result.creditsUsed} créditos)`);
+      setTimeout(() => setAiSuccess(''), 4000);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Erro ao gerar título');
+    } finally {
+      setGeneratingTitle(false);
+    }
+  };
+
+  const handleGenerateDescription = async () => {
+    if (!id) return;
+    setGeneratingDescription(true);
+    setAiError('');
+    setAiSuccess('');
+    try {
+      const result = await api<{ description: string; creditsUsed: number }>('/api/v1/ai/generate/description', {
+        method: 'POST',
+        body: { videoId: id },
+      });
+      setDescription(result.description);
+      setAiSuccess(`Descrição gerada! (${result.creditsUsed} créditos)`);
+      setTimeout(() => setAiSuccess(''), 4000);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Erro ao gerar descrição');
+    } finally {
+      setGeneratingDescription(false);
+    }
+  };
+
+  const handleGenerateKeywords = async () => {
+    if (!id) return;
+    setGeneratingKeywords(true);
+    setAiError('');
+    setAiSuccess('');
+    try {
+      const result = await api<{ keywords: string[]; creditsUsed: number }>('/api/v1/ai/generate/keywords', {
+        method: 'POST',
+        body: { videoId: id },
+      });
+      // Match keywords to existing tags by name (case-insensitive)
+      const matchedTagIds: string[] = [];
+      for (const kw of result.keywords) {
+        const match = tags.find((t) => t.name.toLowerCase() === kw.toLowerCase());
+        if (match && !matchedTagIds.includes(match.id)) {
+          matchedTagIds.push(match.id);
+        }
+      }
+      if (matchedTagIds.length > 0) {
+        setSelectedTags((prev) => {
+          const merged = new Set([...prev, ...matchedTagIds]);
+          return [...merged];
+        });
+      }
+      setAiSuccess(`${result.keywords.length} keywords geradas! ${matchedTagIds.length} tags correspondentes selecionadas. (${result.creditsUsed} créditos)`);
+      setTimeout(() => setAiSuccess(''), 5000);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Erro ao gerar keywords');
+    } finally {
+      setGeneratingKeywords(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -246,11 +326,40 @@ export function VideoFormPage() {
         </div>
       )}
 
+      {aiError && (
+        <div className="mb-6 p-4 rounded-lg bg-red-900/30 border border-red-800/50 text-red-400 text-sm flex items-center gap-2">
+          <span>🤖</span> {aiError}
+        </div>
+      )}
+
+      {aiSuccess && (
+        <div className="mb-6 p-4 rounded-lg bg-green-900/30 border border-green-800/50 text-green-400 text-sm flex items-center gap-2">
+          <span>🤖</span> {aiSuccess}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Title & Slug */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className={labelClass}>Título *</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm font-medium text-gray-300">Título *</label>
+              {isEditing && (
+                <button
+                  type="button"
+                  onClick={handleGenerateTitle}
+                  disabled={generatingTitle}
+                  className="text-xs px-2 py-1 bg-purple-900/30 hover:bg-purple-900/50 text-purple-400 rounded transition-colors disabled:opacity-50 flex items-center gap-1"
+                  title="Gerar título com IA (2 créditos)"
+                >
+                  {generatingTitle ? (
+                    <><span className="animate-spin">⏳</span> Gerando...</>
+                  ) : (
+                    <>🤖 Gerar Título</>
+                  )}
+                </button>
+              )}
+            </div>
             <input type="text" value={title} onChange={(e) => handleTitleChange(e.target.value)} required className={inputClass} placeholder="Título do vídeo" />
           </div>
           <div>
@@ -261,7 +370,24 @@ export function VideoFormPage() {
 
         {/* Description */}
         <div>
-          <label className={labelClass}>Descrição</label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-medium text-gray-300">Descrição</label>
+            {isEditing && (
+              <button
+                type="button"
+                onClick={handleGenerateDescription}
+                disabled={generatingDescription}
+                className="text-xs px-2 py-1 bg-purple-900/30 hover:bg-purple-900/50 text-purple-400 rounded transition-colors disabled:opacity-50 flex items-center gap-1"
+                title="Gerar descrição com IA (3 créditos)"
+              >
+                {generatingDescription ? (
+                  <><span className="animate-spin">⏳</span> Gerando...</>
+                ) : (
+                  <>🤖 Gerar Descrição</>
+                )}
+              </button>
+            )}
+          </div>
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className={inputClass} placeholder="Descrição do vídeo..." />
         </div>
 

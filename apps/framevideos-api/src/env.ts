@@ -13,6 +13,9 @@ export type Env = {
   CF_ZONE_ID: string;
   CF_AUTH_EMAIL: string;
   CF_AUTH_KEY: string;
+  LLM_PROVIDER: string;
+  LLM_API_KEY: string;
+  LLM_MODEL: string;
 };
 
 export type AppContext = {

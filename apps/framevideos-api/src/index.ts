@@ -13,6 +13,8 @@ import { billing } from './routes/billing.js';
 import { domains } from './routes/domains.js';
 import { content } from './routes/content.js';
 import { publicRoutes } from './routes/public.js';
+import { credits } from './routes/credits.js';
+import { ai } from './routes/ai.js';
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -57,6 +59,8 @@ app.route('/api/v1/billing', billing);
 app.route('/api/v1/domains', domains);
 app.route('/api/v1/content', content);
 app.route('/api/v1/public', publicRoutes);
+app.route('/api/v1/credits', credits);
+app.route('/api/v1/ai', ai);
 
 // 404 catch-all
 app.notFound((c) => {

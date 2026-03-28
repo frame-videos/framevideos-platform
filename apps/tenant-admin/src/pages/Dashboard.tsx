@@ -10,19 +10,27 @@ interface Stats {
   totalChannels: number;
 }
 
+interface BalanceData {
+  balance: number;
+  totalCredited: number;
+  totalDebited: number;
+}
+
 export function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [balance, setBalance] = useState<BalanceData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const [videos, categories, tags, performers, channels] = await Promise.all([
+        const [videos, categories, tags, performers, channels, creditsData] = await Promise.all([
           api<{ pagination: { total: number } }>('/api/v1/content/videos?limit=1'),
           api<{ pagination: { total: number } }>('/api/v1/content/categories?limit=1'),
           api<{ pagination: { total: number } }>('/api/v1/content/tags?limit=1'),
           api<{ pagination: { total: number } }>('/api/v1/content/performers?limit=1'),
           api<{ pagination: { total: number } }>('/api/v1/content/channels?limit=1'),
+          api<BalanceData>('/api/v1/credits/balance').catch(() => null),
         ]);
         setStats({
           totalVideos: videos.pagination.total,
@@ -31,6 +39,7 @@ export function DashboardPage() {
           totalPerformers: performers.pagination.total,
           totalChannels: channels.pagination.total,
         });
+        if (creditsData) setBalance(creditsData);
       } catch (err) {
         console.error('Failed to load stats:', err);
       } finally {
@@ -62,23 +71,55 @@ export function DashboardPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {statCards.map((card) => (
-            <a
-              key={card.label}
-              href={card.href}
-              className="bg-gray-900 rounded-xl p-5 border border-gray-800 hover:border-gray-700 transition-colors group"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm text-gray-400">{card.label}</p>
-                <span className="text-xl">{card.icon}</span>
-              </div>
-              <p className="text-3xl font-bold text-white group-hover:text-purple-400 transition-colors">
-                {formatNumber(card.value)}
-              </p>
-            </a>
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {statCards.map((card) => (
+              <a
+                key={card.label}
+                href={card.href}
+                className="bg-gray-900 rounded-xl p-5 border border-gray-800 hover:border-gray-700 transition-colors group"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm text-gray-400">{card.label}</p>
+                  <span className="text-xl">{card.icon}</span>
+                </div>
+                <p className="text-3xl font-bold text-white group-hover:text-purple-400 transition-colors">
+                  {formatNumber(card.value)}
+                </p>
+              </a>
+            ))}
+          </div>
+
+          {/* AI Credits card */}
+          {balance !== null && (
+            <div className="mt-6">
+              <a
+                href="/admin/credits"
+                className="block bg-gradient-to-r from-purple-900/40 to-indigo-900/40 rounded-xl p-5 border border-purple-800/50 hover:border-purple-700/60 transition-colors group"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xl">🤖</span>
+                      <p className="text-sm text-gray-400">Créditos de IA</p>
+                    </div>
+                    <p className="text-3xl font-bold text-purple-400 group-hover:text-purple-300 transition-colors">
+                      {formatNumber(balance.balance)} <span className="text-base font-normal text-gray-500">créditos</span>
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">
+                      Usado: {formatNumber(balance.totalDebited)} / Recebido: {formatNumber(balance.totalCredited)}
+                    </p>
+                    <p className="text-xs text-purple-400 mt-1 group-hover:underline">
+                      Ver detalhes →
+                    </p>
+                  </div>
+                </div>
+              </a>
+            </div>
+          )}
+        </>
       )}
 
       <div className="mt-8 bg-gray-900 rounded-xl border border-gray-800 p-6">
@@ -102,6 +143,16 @@ export function DashboardPage() {
             <div>
               <p className="font-medium">Gerenciar Categorias</p>
               <p className="text-xs text-gray-500">Organizar conteúdo</p>
+            </div>
+          </a>
+          <a
+            href="/admin/credits"
+            className="flex items-center gap-3 p-4 bg-gray-800 rounded-lg hover:bg-gray-750 hover:ring-1 hover:ring-purple-500/30 transition-all"
+          >
+            <span className="text-2xl">🤖</span>
+            <div>
+              <p className="font-medium">Créditos de IA</p>
+              <p className="text-xs text-gray-500">Gerar conteúdo com inteligência artificial</p>
             </div>
           </a>
           <a
