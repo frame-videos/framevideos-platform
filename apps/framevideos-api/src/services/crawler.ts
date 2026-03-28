@@ -14,6 +14,13 @@ export interface CrawlSelectors {
   title: string;
   thumbnail: string;
   duration?: string;
+  /** Optional proxy URL. Use {url} as placeholder for the target URL.
+   *  Examples:
+   *  - ScraperAPI: https://api.scraperapi.com?api_key=KEY&url={url}
+   *  - Bright Data: https://brd-customer-xxx:pass@brd.superproxy.io:22225
+   *  - Generic: https://proxy.example.com/fetch?url={url}
+   */
+  proxyUrl?: string;
 }
 
 export interface VideoLink {
@@ -138,11 +145,15 @@ export function parseVideoLinks(html: string, selectors: CrawlSelectors, baseUrl
   const videos: VideoLink[] = [];
   const seen = new Set<string>();
 
+  console.log(`[crawler] parseVideoLinks: html=${html.length} bytes, baseUrl=${baseUrl}, selectors=${JSON.stringify(selectors)}`);
+
   // Strategy 1: Try to find video cards/items using the link selector
   const linkPattern = selectorToPattern(selectors.videoLink);
   const linkMatches = html.matchAll(linkPattern);
+  let matchCount = 0;
 
   for (const match of linkMatches) {
+    matchCount++;
     const block = match[0];
     const hrefs = extractHrefs(block);
     if (hrefs.length === 0) continue;
@@ -179,10 +190,13 @@ export function parseVideoLinks(html: string, selectors: CrawlSelectors, baseUrl
     }
   }
 
+  console.log(`[crawler] Strategy 1: ${matchCount} blocks matched, ${videos.length} videos extracted`);
+
   // Strategy 2: Fallback — extract all links with href containing video-like patterns
   if (videos.length === 0) {
     const allHrefs = extractHrefs(html);
-    const videoPatterns = [/\/video\//i, /\/watch/i, /\/v\//i, /\/embed\//i];
+    console.log(`[crawler] Strategy 2 fallback: ${allHrefs.length} total hrefs found`);
+    const videoPatterns = [/\/video\//i, /\/video\./i, /\/watch/i, /\/v\//i, /\/embed\//i];
 
     for (const href of allHrefs) {
       if (videoPatterns.some((p) => p.test(href))) {
@@ -423,14 +437,25 @@ export async function executeCrawl(
 
     const selectors: CrawlSelectors = JSON.parse(source.config_json);
 
-    // Fetch source URL
+    // Fetch source URL (with optional proxy support)
     let html: string;
     try {
-      const response = await fetch(source.base_url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; FrameVideos-Crawler/1.0)',
-          'Accept': 'text/html,application/xhtml+xml',
-        },
+      let fetchUrl = source.base_url;
+      const fetchHeaders: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+      };
+
+      // If proxy is configured, route through it
+      if (selectors.proxyUrl) {
+        const encodedTarget = encodeURIComponent(source.base_url);
+        fetchUrl = selectors.proxyUrl.replace('{url}', encodedTarget);
+        console.log(`[crawler] Using proxy: ${selectors.proxyUrl.split('?')[0]}...`);
+      }
+
+      const response = await fetch(fetchUrl, {
+        headers: fetchHeaders,
       });
 
       if (!response.ok) {
@@ -440,12 +465,14 @@ export async function executeCrawl(
       html = await response.text();
     } catch (fetchError) {
       const msg = fetchError instanceof Error ? fetchError.message : 'Fetch failed';
-      errors.push(`Failed to fetch ${source.url}: ${msg}`);
+      errors.push(`Failed to fetch ${source.base_url}: ${msg}`);
       throw new Error(`Fetch failed: ${msg}`);
     }
 
+    console.log(`[crawler] Fetched ${html.length} bytes from ${source.base_url}`);
+
     // Parse video links
-    const videoLinks = parseVideoLinks(html, selectors, source.url);
+    const videoLinks = parseVideoLinks(html, selectors, source.base_url);
 
     // Deduplicate
     const { new: newVideos, duplicate: duplicateVideos } = await deduplicateVideos(videoLinks, tenantId, db);

@@ -36,6 +36,7 @@ const selectorsSchema = z.object({
   title: z.string().min(1, 'Seletor de título é obrigatório'),
   thumbnail: z.string().min(1, 'Seletor de thumbnail é obrigatório'),
   duration: z.string().optional(),
+  proxyUrl: z.string().url().optional(),
 });
 
 const createSourceSchema = z.object({
