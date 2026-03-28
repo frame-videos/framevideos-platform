@@ -94,9 +94,9 @@ export async function debitCredits(
       params: [amount, amount, tenantId],
     },
     {
-      sql: `INSERT INTO wallet_transactions (id, tenant_id, type, amount, description, operation_type, reference_id)
-            VALUES (?, ?, 'debit', ?, ?, ?, ?)`,
-      params: [transactionId, tenantId, amount, `AI: ${operation}`, operation, referenceId ?? null],
+      sql: `INSERT INTO llm_transactions (id, wallet_id, tenant_id, type, amount, reason, description, operation_type, reference_id, balance_after, created_at)
+            VALUES (?, (SELECT id FROM llm_wallets WHERE tenant_id = ?), ?, 'debit', ?, ?, ?, ?, ?, (SELECT balance - ? FROM llm_wallets WHERE tenant_id = ?), datetime('now'))`,
+      params: [transactionId, tenantId, tenantId, amount, operation, `AI: ${operation}`, operation, referenceId ?? null, amount, tenantId],
     },
   ]);
 }
@@ -160,7 +160,7 @@ credits.get('/transactions', async (c) => {
   const { page, limit, offset } = paginationParams(c);
 
   const countResult = await db.queryOne<{ total: number }>(
-    'SELECT COUNT(*) as total FROM wallet_transactions WHERE tenant_id = ?',
+    'SELECT COUNT(*) as total FROM llm_transactions WHERE tenant_id = ?',
     [tenantId],
   );
   const total = countResult?.total ?? 0;
@@ -175,7 +175,7 @@ credits.get('/transactions', async (c) => {
     created_at: string;
   }>(
     `SELECT id, type, amount, description, operation_type, reference_id, created_at
-     FROM wallet_transactions
+     FROM llm_transactions
      WHERE tenant_id = ?
      ORDER BY created_at DESC
      LIMIT ? OFFSET ?`,
