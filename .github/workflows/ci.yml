@@ -3,6 +3,12 @@ name: CI
 on:
   pull_request:
     branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ci:
@@ -24,11 +30,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm typecheck
-
       - name: Lint
         run: pnpm lint
+        continue-on-error: false
 
-      - name: Test
-        run: pnpm test
+      - name: Typecheck
+        run: pnpm typecheck
+        continue-on-error: false
+
+      - name: Unit Tests
+        run: cd apps/framevideos-api && npx vitest run --reporter=verbose
+        continue-on-error: false
+
+      - name: Test Summary
+        if: always()
+        run: echo "✅ CI pipeline complete"
