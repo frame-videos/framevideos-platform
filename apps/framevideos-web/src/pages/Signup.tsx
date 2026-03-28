@@ -12,7 +12,7 @@ const signupSchema = z
   .object({
     name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
     email: z.string().email('Email inválido'),
-    siteName: z
+    tenantName: z
       .string()
       .min(3, 'Nome do site deve ter pelo menos 3 caracteres')
       .max(50, 'Nome do site deve ter no máximo 50 caracteres'),
@@ -52,7 +52,7 @@ export function Signup() {
       await signup({
         name: data.name,
         email: data.email,
-        siteName: data.siteName,
+        tenantName: data.tenantName,
         password: data.password,
       });
     } catch (err) {
@@ -119,8 +119,8 @@ export function Signup() {
               type="text"
               placeholder="meu-site-videos"
               hint="Será usado como subdomínio: meu-site-videos.framevideos.com"
-              error={errors.siteName?.message}
-              {...register('siteName')}
+              error={errors.tenantName?.message}
+              {...register('tenantName')}
             />
 
             <Input

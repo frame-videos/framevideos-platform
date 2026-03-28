@@ -120,7 +120,22 @@ export async function apiClient<T = unknown>(
   if (!response.ok) {
     let errorData: ApiError;
     try {
-      errorData = await response.json();
+      const raw = await response.json();
+      // API retorna { error: { message, code, statusCode, fields? } }
+      if (raw.error) {
+        const fields = raw.error.fields as Array<{ field: string; message: string }> | undefined;
+        const fieldMessages = fields?.map((f: { field: string; message: string }) => f.message).join('. ');
+        errorData = {
+          message: fieldMessages || raw.error.message || 'Erro no servidor.',
+          statusCode: raw.error.statusCode || response.status,
+          error: raw.error.code,
+        };
+      } else {
+        errorData = {
+          message: raw.message || 'Erro inesperado no servidor.',
+          statusCode: response.status,
+        };
+      }
     } catch {
       errorData = {
         message: 'Erro inesperado no servidor.',
