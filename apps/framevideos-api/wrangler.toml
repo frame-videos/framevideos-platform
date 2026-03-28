@@ -10,7 +10,7 @@ crons = ["*/5 * * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "frame-videos-db"
-database_id = "083094ae-7cfa-4fea-9f5e-8ab006498e6c"
+database_id = "dae9bd51-c863-42b0-b5b6-21f4569aa6c9"
 
 # R2
 [[r2_buckets]]
@@ -33,7 +33,7 @@ ENVIRONMENT = "staging"
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "frame-videos-db"
-database_id = "083094ae-7cfa-4fea-9f5e-8ab006498e6c"
+database_id = "dae9bd51-c863-42b0-b5b6-21f4569aa6c9"
 
 [[env.staging.r2_buckets]]
 binding = "STORAGE"
@@ -52,7 +52,7 @@ ENVIRONMENT = "production"
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "frame-videos-db"
-database_id = "083094ae-7cfa-4fea-9f5e-8ab006498e6c"
+database_id = "dae9bd51-c863-42b0-b5b6-21f4569aa6c9"
 
 [[env.production.r2_buckets]]
 binding = "STORAGE"
