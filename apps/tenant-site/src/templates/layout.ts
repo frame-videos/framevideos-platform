@@ -152,6 +152,10 @@ export function layout(settings: SiteSettings, opts: LayoutOptions): string {
             </div>
           </form>
           ${localeSwitcher}
+          <a href="/login" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white bg-gray-800/60 hover:bg-gray-700/60 rounded-lg border border-gray-700/50 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+            Entrar
+          </a>
           <button id="mobile-menu-btn" class="md:hidden p-2 text-gray-400 hover:text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
@@ -167,6 +171,10 @@ export function layout(settings: SiteSettings, opts: LayoutOptions): string {
           ${navLink('/performers', 'Modelos')}
           ${navLink('/channels', 'Canais')}
           ${navLink('/tags', 'Tags')}
+          <a href="/login" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+            Entrar
+          </a>
         </nav>
       </div>
     </div>
