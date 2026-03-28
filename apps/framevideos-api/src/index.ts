@@ -24,6 +24,7 @@ import { newsletter } from './routes/newsletter.js';
 import { monitoring } from './routes/monitoring.js';
 import { admin } from './routes/admin.js';
 import { security } from './routes/security.js';
+import { crawler } from './routes/crawler.js';
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,7 @@ app.route('/api/v1/newsletter', newsletter);
 app.route('/api/v1/monitoring', monitoring);
 app.route('/api/v1/admin', admin);
 app.route('/api/v1/security', security);
+app.route('/api/v1/crawler', crawler);
 
 // 404 catch-all
 app.notFound((c) => {
