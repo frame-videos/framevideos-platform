@@ -3,10 +3,11 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
 import type { AppContext } from './env.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error-handler.js';
+import { structuredLogger } from './middleware/logger.js';
+import { errorTracker } from './middleware/error-tracker.js';
 import { health } from './routes/health.js';
 import { auth } from './routes/auth.js';
 import { billing } from './routes/billing.js';
@@ -43,13 +44,16 @@ app.use(
   }),
 );
 
-// Logger (console.log no Worker)
-app.use('*', logger());
-
 // Request ID em toda request
 app.use('*', requestIdMiddleware);
 
-// ─── Error handler global ────────────────────────────────────────────────────
+// Error tracking — global error boundary (catches unhandled errors)
+app.use('*', errorTracker());
+
+// Structured logging — JSON log entries for every request
+app.use('*', structuredLogger());
+
+// ─── Error handler global (fallback for errors not caught by errorTracker) ───
 
 app.onError(errorHandler);
 
