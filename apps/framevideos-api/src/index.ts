@@ -48,17 +48,17 @@ app.use(
   }),
 );
 
+// Request ID em toda request
+app.use('*', requestIdMiddleware);
+
+// Error tracking — global error boundary (FIRST to catch all errors)
+app.use('*', errorTracker());
+
 // Security headers em toda response
 app.use('*', securityHeaders());
 
 // Input sanitization (antes das routes, depois do CORS)
 app.use('*', sanitizeInput());
-
-// Request ID em toda request
-app.use('*', requestIdMiddleware);
-
-// Error tracking — global error boundary (catches unhandled errors)
-app.use('*', errorTracker());
 
 // Structured logging — JSON log entries for every request
 app.use('*', structuredLogger());
