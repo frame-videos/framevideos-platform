@@ -180,8 +180,8 @@ ai.post('/generate/title', async (c) => {
   const generatedTitle = result.text.trim().replace(/^["']|["']$/g, '');
 
   // Debit credits + log usage
-  await debitCredits(db, tenantId, cost, 'generate_title', body.videoId);
-  await logLlmUsage(db, tenantId, 'generate_title', result.model, result.inputTokens, result.outputTokens, cost, body.videoId);
+  await debitCredits(db, tenantId, cost, 'seo_generation', body.videoId);
+  await logLlmUsage(db, tenantId, 'seo_generation', result.model, result.inputTokens, result.outputTokens, cost, body.videoId);
 
   return c.json({
     title: generatedTitle,
@@ -218,8 +218,8 @@ ai.post('/generate/description', async (c) => {
 
   const generatedDescription = result.text.trim().replace(/^["']|["']$/g, '');
 
-  await debitCredits(db, tenantId, cost, 'generate_description', body.videoId);
-  await logLlmUsage(db, tenantId, 'generate_description', result.model, result.inputTokens, result.outputTokens, cost, body.videoId);
+  await debitCredits(db, tenantId, cost, 'description_generation', body.videoId);
+  await logLlmUsage(db, tenantId, 'description_generation', result.model, result.inputTokens, result.outputTokens, cost, body.videoId);
 
   return c.json({
     description: generatedDescription,
@@ -268,8 +268,8 @@ ai.post('/generate/keywords', async (c) => {
       .filter(Boolean);
   }
 
-  await debitCredits(db, tenantId, cost, 'generate_keywords', body.videoId);
-  await logLlmUsage(db, tenantId, 'generate_keywords', result.model, result.inputTokens, result.outputTokens, cost, body.videoId);
+  await debitCredits(db, tenantId, cost, 'seo_generation', body.videoId);
+  await logLlmUsage(db, tenantId, 'seo_generation', result.model, result.inputTokens, result.outputTokens, cost, body.videoId);
 
   return c.json({
     keywords,
@@ -314,8 +314,8 @@ ai.post('/generate/faq', async (c) => {
     faq = [];
   }
 
-  await debitCredits(db, tenantId, cost, 'generate_faq', body.videoId);
-  await logLlmUsage(db, tenantId, 'generate_faq', result.model, result.inputTokens, result.outputTokens, cost, body.videoId);
+  await debitCredits(db, tenantId, cost, 'seo_generation', body.videoId);
+  await logLlmUsage(db, tenantId, 'seo_generation', result.model, result.inputTokens, result.outputTokens, cost, body.videoId);
 
   return c.json({
     faq,
@@ -442,8 +442,8 @@ ai.post('/translate', async (c) => {
   }
 
   // Debit + log
-  await debitCredits(db, tenantId, totalCost, 'translate_content', contentId);
-  await logLlmUsage(db, tenantId, 'translate_content', config.model, totalInputTokens, totalOutputTokens, totalCost, contentId);
+  await debitCredits(db, tenantId, totalCost, 'translation', contentId);
+  await logLlmUsage(db, tenantId, 'translation', config.model, totalInputTokens, totalOutputTokens, totalCost, contentId);
 
   return c.json({
     translations: results,
