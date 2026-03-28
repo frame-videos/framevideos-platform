@@ -2083,12 +2083,12 @@ for (const [contentType, config] of Object.entries(TRANSLATION_CONFIGS)) {
     return c.json({
       data: translations.map((t) => {
         const result: Record<string, unknown> = {
-          locale: t.locale,
-          title: t.title ?? t.name ?? '',
-          slug: t.slug ?? '',
-          description: t.description ?? t.bio ?? t.content ?? '',
-          seoTitle: t.seo_title ?? '',
-          seoDescription: t.seo_description ?? '',
+          locale: t['locale'],
+          title: t['title'] ?? t['name'] ?? '',
+          slug: t['slug'] ?? '',
+          description: t['description'] ?? t['bio'] ?? t['content'] ?? '',
+          seoTitle: t['seo_title'] ?? '',
+          seoDescription: t['seo_description'] ?? '',
         };
         return result;
       }),

@@ -91,23 +91,23 @@ async function resolveTenant(
     }
 
     const result = await db
-      .prepare(`SELECT t.id, t.name, t.slug, COALESCE(p.slug, 'free') as plan_slug FROM tenants t LEFT JOIN subscriptions s ON s.tenant_id = t.id AND s.status IN ('active', 'trialing') LEFT JOIN plans p ON p.id = s.plan_id WHERE t.slug = ? AND t.status IN ('active', 'trial') LIMIT 1`)
+      .prepare(`SELECT t.id, t.name, t.slug FROM tenants t WHERE t.slug = ? AND t.status IN ('active', 'trial') LIMIT 1`)
       .bind(slug)
-      .first<{ id: string; name: string; slug: string; plan_slug: string }>();
+      .first<{ id: string; name: string; slug: string }>();
 
     if (result) {
-      const isWL = result.plan_slug === 'enterprise';
-      tenant = { tenantId: result.id, tenantName: result.name, tenantSlug: result.slug, domain: hostname, isPrimary: false, planSlug: result.plan_slug, isWhiteLabel: isWL };
+      const planSlug = await getTenantPlanSlug(db, result.id);
+      tenant = { tenantId: result.id, tenantName: result.name, tenantSlug: result.slug, domain: hostname, isPrimary: false, planSlug, isWhiteLabel: planSlug === 'enterprise' };
     }
   } else {
     const result = await db
-      .prepare(`SELECT d.tenant_id, d.domain, d.is_primary, t.name, t.slug, COALESCE(p.slug, 'free') as plan_slug FROM domains d JOIN tenants t ON t.id = d.tenant_id LEFT JOIN subscriptions s ON s.tenant_id = t.id AND s.status IN ('active', 'trialing') LEFT JOIN plans p ON p.id = s.plan_id WHERE d.domain = ? AND d.status = 'active' AND t.status IN ('active', 'trial') LIMIT 1`)
+      .prepare(`SELECT d.tenant_id, d.domain, d.is_primary, t.name, t.slug FROM domains d JOIN tenants t ON t.id = d.tenant_id WHERE d.domain = ? AND d.status = 'active' AND t.status IN ('active', 'trial') LIMIT 1`)
       .bind(hostname)
-      .first<{ tenant_id: string; domain: string; is_primary: number; name: string; slug: string; plan_slug: string }>();
+      .first<{ tenant_id: string; domain: string; is_primary: number; name: string; slug: string }>();
 
     if (result) {
-      const isWL = result.plan_slug === 'enterprise';
-      tenant = { tenantId: result.tenant_id, tenantName: result.name, tenantSlug: result.slug, domain: result.domain, isPrimary: result.is_primary === 1, planSlug: result.plan_slug, isWhiteLabel: isWL };
+      const planSlug = await getTenantPlanSlug(db, result.tenant_id);
+      tenant = { tenantId: result.tenant_id, tenantName: result.name, tenantSlug: result.slug, domain: result.domain, isPrimary: result.is_primary === 1, planSlug, isWhiteLabel: planSlug === 'enterprise' };
     }
   }
 
@@ -118,6 +118,20 @@ async function resolveTenant(
   }
 
   return tenant;
+}
+
+// ─── Plan helper ─────────────────────────────────────────────────────────────
+
+async function getTenantPlanSlug(db: D1Database, tenantId: string): Promise<string> {
+  try {
+    const row = await db
+      .prepare("SELECT p.slug FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE s.tenant_id = ? AND s.status IN ('active', 'trialing') LIMIT 1")
+      .bind(tenantId)
+      .first<{ slug: string }>();
+    return row?.slug ?? 'free';
+  } catch {
+    return 'free';
+  }
 }
 
 // ─── Data Access Layer ───────────────────────────────────────────────────────
@@ -1298,27 +1312,33 @@ async function renderStaticPage(db: D1Database, tenant: TenantInfo, settings: Si
     <div class="prose prose-invert max-w-none">${html}</div>
   </article>`;
 
-  return layout(settings, { tenant,
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
+  return layout(settings, {
     title: page.title,
     description: page.content.slice(0, 160),
-    canonical: `https://${tenant.domain}/pages/${slug}`,
+    canonical: `https://${tenant.domain}${lp}/pages/${slug}`,
     content,
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: `/pages/${slug}`,
   });
 }
 
 // ─── Search Page ─────────────────────────────────────────────────────────────
 
-async function renderSearchPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, url: URL): Promise<string> {
+async function renderSearchPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, url: URL, localeConfig: LocaleConfig): Promise<string> {
   const query = url.searchParams.get('q') ?? url.searchParams.get('search') ?? '';
   const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const offset = (page - 1) * VIDEOS_PER_PAGE;
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   let content = '';
 
   // Search form hero
   content += `<section class="mb-8">
     <h1 class="text-2xl font-bold mb-4">${query ? `Resultados para "${esc(query)}"` : 'Buscar Vídeos'}</h1>
-    <form action="/search" method="GET" class="max-w-2xl">
+    <form action="${lp}/search" method="GET" class="max-w-2xl">
       <div class="flex gap-2">
         <div class="relative flex-1">
           <input type="text" name="q" value="${esc(query)}" placeholder="Digite sua busca..." autofocus
@@ -1341,8 +1361,8 @@ async function renderSearchPage(db: D1Database, tenant: TenantInfo, settings: Si
     const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
 
     content += `<p class="text-gray-500 text-sm mb-4">${total} resultado${total !== 1 ? 's' : ''} encontrado${total !== 1 ? 's' : ''}</p>`;
-    content += videoGrid(videos);
-    content += pagination(page, totalPages, `/search?q=${encodeURIComponent(query)}`);
+    content += videoGrid(videos, lp);
+    content += pagination(page, totalPages, `${lp}/search?q=${encodeURIComponent(query)}`);
   } else {
     // Show popular tags as search suggestions
     const tags = await getTags(db, tenant.tenantId, locale);
@@ -1352,7 +1372,7 @@ async function renderSearchPage(db: D1Database, tenant: TenantInfo, settings: Si
       content += `<section class="mt-8">
         <h2 class="text-lg font-semibold mb-4 text-gray-300">Tags Populares</h2>
         <div class="flex flex-wrap gap-2">
-          ${topTags.map((t) => `<a href="/search?q=${encodeURIComponent(t.name)}" class="bg-gray-900 px-4 py-2 rounded-lg text-sm hover:bg-gray-800 hover:text-purple-400 transition-colors">
+          ${topTags.map((t) => `<a href="${lp}/search?q=${encodeURIComponent(t.name)}" class="bg-gray-900 px-4 py-2 rounded-lg text-sm hover:bg-gray-800 hover:text-purple-400 transition-colors">
             <span class="text-gray-400">#</span>${esc(t.name)}
             <span class="text-xs text-gray-600 ml-1">(${t.videoCount})</span>
           </a>`).join('')}
@@ -1361,12 +1381,16 @@ async function renderSearchPage(db: D1Database, tenant: TenantInfo, settings: Si
     }
   }
 
-  return layout(settings, { tenant,
+  return layout(settings, {
     title: query ? `Busca: ${query}` : 'Buscar',
     description: query ? `Resultados da busca por "${query}"` : `Buscar vídeos em ${settings.siteName}`,
-    canonical: `https://${tenant.domain}/search`,
+    canonical: `https://${tenant.domain}${lp}/search`,
     content,
     activePath: '/search',
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: '/search',
   });
 }
 
@@ -1395,36 +1419,160 @@ function render404Page(settings: SiteSettings | null, tenant: TenantInfo | null)
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
-function matchRoute(pathname: string): { handler: string; params: Record<string, string> } {
+function matchRoute(pathname: string): { handler: string; params: Record<string, string>; locale?: string } {
+  // Check for locale prefix: /{locale}/...
+  let path = pathname;
+  let detectedLocale: string | undefined;
+
+  const localeMatch = pathname.match(/^\/([a-z]{2})(\/.*)?$/);
+  if (localeMatch && (SUPPORTED_LOCALES as readonly string[]).includes(localeMatch[1]!)) {
+    detectedLocale = localeMatch[1]!;
+    path = localeMatch[2] || '/';
+  }
+
   // Exact matches
-  if (pathname === '/' || pathname === '') return { handler: 'home', params: {} };
-  if (pathname === '/videos') return { handler: 'videos', params: {} };
-  if (pathname === '/search') return { handler: 'search', params: {} };
-  if (pathname === '/categories') return { handler: 'categories', params: {} };
-  if (pathname === '/performers') return { handler: 'performers', params: {} };
-  if (pathname === '/tags') return { handler: 'tags', params: {} };
-  if (pathname === '/channels') return { handler: 'channels', params: {} };
+  if (path === '/' || path === '') return { handler: 'home', params: {}, locale: detectedLocale };
+  if (path === '/videos') return { handler: 'videos', params: {}, locale: detectedLocale };
+  if (path === '/search') return { handler: 'search', params: {}, locale: detectedLocale };
+  if (path === '/categories') return { handler: 'categories', params: {}, locale: detectedLocale };
+  if (path === '/performers') return { handler: 'performers', params: {}, locale: detectedLocale };
+  if (path === '/tags') return { handler: 'tags', params: {}, locale: detectedLocale };
+  if (path === '/channels') return { handler: 'channels', params: {}, locale: detectedLocale };
 
   // Parameterized routes
-  const videoMatch = pathname.match(/^\/video\/([^/]+)$/);
-  if (videoMatch) return { handler: 'video', params: { slug: videoMatch[1]! } };
+  const videoMatch = path.match(/^\/video\/([^/]+)$/);
+  if (videoMatch) return { handler: 'video', params: { slug: videoMatch[1]! }, locale: detectedLocale };
 
-  const categoryMatch = pathname.match(/^\/category\/([^/]+)$/);
-  if (categoryMatch) return { handler: 'category', params: { slug: categoryMatch[1]! } };
+  const categoryMatch = path.match(/^\/category\/([^/]+)$/);
+  if (categoryMatch) return { handler: 'category', params: { slug: categoryMatch[1]! }, locale: detectedLocale };
 
-  const performerMatch = pathname.match(/^\/performer\/([^/]+)$/);
-  if (performerMatch) return { handler: 'performer', params: { slug: performerMatch[1]! } };
+  const performerMatch = path.match(/^\/performer\/([^/]+)$/);
+  if (performerMatch) return { handler: 'performer', params: { slug: performerMatch[1]! }, locale: detectedLocale };
 
-  const tagMatch = pathname.match(/^\/tag\/([^/]+)$/);
-  if (tagMatch) return { handler: 'tag', params: { slug: tagMatch[1]! } };
+  const tagMatch = path.match(/^\/tag\/([^/]+)$/);
+  if (tagMatch) return { handler: 'tag', params: { slug: tagMatch[1]! }, locale: detectedLocale };
 
-  const channelMatch = pathname.match(/^\/channel\/([^/]+)$/);
-  if (channelMatch) return { handler: 'channel', params: { slug: channelMatch[1]! } };
+  const channelMatch = path.match(/^\/channel\/([^/]+)$/);
+  if (channelMatch) return { handler: 'channel', params: { slug: channelMatch[1]! }, locale: detectedLocale };
 
-  const pageMatch = pathname.match(/^\/pages\/([^/]+)$/);
-  if (pageMatch) return { handler: 'page', params: { slug: pageMatch[1]! } };
+  const pageMatch = path.match(/^\/pages\/([^/]+)$/);
+  if (pageMatch) return { handler: 'page', params: { slug: pageMatch[1]! }, locale: detectedLocale };
 
   return { handler: '404', params: {} };
+}
+
+// ─── Sitemap Generators ─────────────────────────────────────────────────────
+
+const SITEMAP_MAX_URLS = 50000;
+
+function sitemapXmlHeader(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n`;
+}
+
+function sitemapUrl(loc: string, lastmod?: string, alternates?: Array<{ locale: string; href: string }>): string {
+  let entry = `  <url>\n    <loc>${esc(loc)}</loc>\n`;
+  if (lastmod) entry += `    <lastmod>${lastmod}</lastmod>\n`;
+  if (alternates) {
+    for (const alt of alternates) {
+      entry += `    <xhtml:link rel="alternate" hreflang="${esc(alt.locale)}" href="${esc(alt.href)}" />\n`;
+    }
+  }
+  entry += `  </url>\n`;
+  return entry;
+}
+
+async function generateSitemapIndex(hostname: string): Promise<string> {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap><loc>https://${esc(hostname)}/sitemap-videos.xml</loc></sitemap>
+  <sitemap><loc>https://${esc(hostname)}/sitemap-categories.xml</loc></sitemap>
+  <sitemap><loc>https://${esc(hostname)}/sitemap-pages.xml</loc></sitemap>
+</sitemapindex>`;
+}
+
+async function generateVideoSitemap(db: D1Database, tenantId: string, hostname: string, localeConfig: LocaleConfig, pageNum: number): Promise<string> {
+  const limit = SITEMAP_MAX_URLS;
+  const offset = (pageNum - 1) * limit;
+
+  const videos = await db.prepare(
+    `SELECT v.slug, v.updated_at, v.created_at
+     FROM videos v WHERE v.tenant_id = ? AND v.status = 'published'
+     ORDER BY v.created_at DESC LIMIT ? OFFSET ?`
+  ).bind(tenantId, limit, offset).all<{ slug: string; updated_at: string | null; created_at: string }>();
+
+  let xml = sitemapXmlHeader();
+  for (const v of videos.results) {
+    const lastmod = (v.updated_at || v.created_at).split('T')[0] ?? '';
+    for (const loc of localeConfig.enabledLocales) {
+      const prefix = loc === localeConfig.defaultLocale ? '' : `/${loc}`;
+      const urlStr = `https://${hostname}${prefix}/video/${v.slug}`;
+      const alternates = localeConfig.enabledLocales.map((l) => ({
+        locale: l,
+        href: `https://${hostname}${l === localeConfig.defaultLocale ? '' : `/${l}`}/video/${v.slug}`,
+      }));
+      xml += sitemapUrl(urlStr, lastmod, alternates);
+    }
+  }
+  xml += '</urlset>';
+  return xml;
+}
+
+async function generateCategorySitemap(db: D1Database, tenantId: string, hostname: string, localeConfig: LocaleConfig): Promise<string> {
+  const categories = await db.prepare(
+    'SELECT slug FROM categories WHERE tenant_id = ? AND is_active = 1 ORDER BY slug'
+  ).bind(tenantId).all<{ slug: string }>();
+
+  let xml = sitemapXmlHeader();
+  for (const c of categories.results) {
+    for (const loc of localeConfig.enabledLocales) {
+      const prefix = loc === localeConfig.defaultLocale ? '' : `/${loc}`;
+      const urlStr = `https://${hostname}${prefix}/category/${c.slug}`;
+      const alternates = localeConfig.enabledLocales.map((l) => ({
+        locale: l,
+        href: `https://${hostname}${l === localeConfig.defaultLocale ? '' : `/${l}`}/category/${c.slug}`,
+      }));
+      xml += sitemapUrl(urlStr, undefined, alternates);
+    }
+  }
+  xml += '</urlset>';
+  return xml;
+}
+
+async function generatePageSitemap(db: D1Database, tenantId: string, hostname: string, localeConfig: LocaleConfig): Promise<string> {
+  const pages = await db.prepare(
+    'SELECT slug, updated_at FROM pages WHERE tenant_id = ? AND is_published = 1 ORDER BY slug'
+  ).bind(tenantId).all<{ slug: string; updated_at: string | null }>();
+
+  let xml = sitemapXmlHeader();
+
+  // Add static listing pages
+  const staticPaths = ['/', '/videos', '/categories', '/performers', '/tags', '/channels'];
+  for (const path of staticPaths) {
+    for (const loc of localeConfig.enabledLocales) {
+      const prefix = loc === localeConfig.defaultLocale ? '' : `/${loc}`;
+      const urlStr = `https://${hostname}${prefix}${path === '/' ? '' : path}` || `https://${hostname}${prefix}/`;
+      const alternates = localeConfig.enabledLocales.map((l) => ({
+        locale: l,
+        href: `https://${hostname}${l === localeConfig.defaultLocale ? '' : `/${l}`}${path === '/' ? '/' : path}`,
+      }));
+      xml += sitemapUrl(urlStr, undefined, alternates);
+    }
+  }
+
+  // Add dynamic pages
+  for (const p of pages.results) {
+    for (const loc of localeConfig.enabledLocales) {
+      const prefix = loc === localeConfig.defaultLocale ? '' : `/${loc}`;
+      const urlStr = `https://${hostname}${prefix}/pages/${p.slug}`;
+      const alternates = localeConfig.enabledLocales.map((l) => ({
+        locale: l,
+        href: `https://${hostname}${l === localeConfig.defaultLocale ? '' : `/${l}`}/pages/${p.slug}`,
+      }));
+      xml += sitemapUrl(urlStr, p.updated_at?.split('T')[0], alternates);
+    }
+  }
+  xml += '</urlset>';
+  return xml;
 }
 
 // ─── Worker Entry Point ─────────────────────────────────────────────────────
@@ -1439,13 +1587,6 @@ export default {
     if (pathname === '/__health') {
       return new Response(JSON.stringify({ status: 'ok', worker: 'tenant-site' }), {
         headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Robots.txt
-    if (pathname === '/robots.txt') {
-      return new Response(`User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: https://${hostname}/sitemap.xml`, {
-        headers: { 'Content-Type': 'text/plain' },
       });
     }
 
@@ -1465,9 +1606,59 @@ export default {
         });
       }
 
+      // Load locale config early (needed for sitemaps/robots)
+      const localeConfig = await getTenantLocaleConfig(env.DB, tenant.tenantId);
+
+      // Robots.txt — dynamic per tenant
+      if (pathname === '/robots.txt') {
+        const robotsTxt = `User-agent: *\nAllow: /\nDisallow: /admin\n\nSitemap: https://${hostname}/sitemap.xml`;
+        return new Response(robotsTxt, {
+          headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=3600' },
+        });
+      }
+
+      // Sitemap endpoints
+      if (pathname === '/sitemap.xml') {
+        const xml = await generateSitemapIndex(hostname);
+        return new Response(xml, {
+          headers: { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=3600, s-maxage=7200' },
+        });
+      }
+
+      if (pathname === '/sitemap-videos.xml' || pathname.match(/^\/sitemap-videos-(\d+)\.xml$/)) {
+        const pageMatch = pathname.match(/^\/sitemap-videos-(\d+)\.xml$/);
+        const pageNum = pageMatch ? parseInt(pageMatch[1]!, 10) : 1;
+        const xml = await generateVideoSitemap(env.DB, tenant.tenantId, hostname, localeConfig, pageNum);
+        return new Response(xml, {
+          headers: { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=3600, s-maxage=7200' },
+        });
+      }
+
+      if (pathname === '/sitemap-categories.xml') {
+        const xml = await generateCategorySitemap(env.DB, tenant.tenantId, hostname, localeConfig);
+        return new Response(xml, {
+          headers: { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=3600, s-maxage=7200' },
+        });
+      }
+
+      if (pathname === '/sitemap-pages.xml') {
+        const xml = await generatePageSitemap(env.DB, tenant.tenantId, hostname, localeConfig);
+        return new Response(xml, {
+          headers: { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=3600, s-maxage=7200' },
+        });
+      }
+
+      // Check redirects
+      const redirect = await checkRedirect(env.DB, tenant.tenantId, pathname);
+      if (redirect) {
+        return new Response(null, {
+          status: redirect.statusCode,
+          headers: { 'Location': redirect.toPath },
+        });
+      }
+
       // Admin path → serve admin SPA (handled by separate worker or redirect)
       if (pathname.startsWith('/admin')) {
-        // For now, redirect to admin placeholder. In production, this would be handled by the tenant-admin worker.
         return new Response(`<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Painel Admin — ${esc(tenant.tenantName)}</title>
@@ -1483,55 +1674,69 @@ export default {
         });
       }
 
-      // Load settings and locale
-      const [settings, locale] = await Promise.all([
-        getSiteSettings(env.DB, tenant.tenantId, tenant.tenantName),
-        getTenantLocale(env.DB, tenant.tenantId),
-      ]);
+      // Load settings
+      const settings = await getSiteSettings(env.DB, tenant.tenantId, tenant.tenantName);
 
-      // Route
+      // Route matching (handles locale prefix)
       const route = matchRoute(pathname);
+
+      // Determine locale: route locale > Accept-Language > default
+      let locale = localeConfig.defaultLocale;
+      if (route.locale && localeConfig.enabledLocales.includes(route.locale)) {
+        locale = route.locale;
+      } else if (!route.locale && route.handler === 'home') {
+        // On homepage without locale prefix, detect from Accept-Language
+        const detected = detectLocaleFromHeader(request.headers.get('Accept-Language'), localeConfig);
+        if (detected && detected !== localeConfig.defaultLocale && localeConfig.enabledLocales.length > 1) {
+          // Redirect to detected locale
+          return new Response(null, {
+            status: 302,
+            headers: { 'Location': `/${detected}/`, 'Vary': 'Accept-Language' },
+          });
+        }
+      }
+
       let html: string | null = null;
 
       switch (route.handler) {
         case 'home':
-          html = await renderHomepage(env.DB, tenant, settings, locale);
+          html = await renderHomepage(env.DB, tenant, settings, locale, localeConfig);
           break;
         case 'videos':
-          html = await renderVideosPage(env.DB, tenant, settings, locale, url);
+          html = await renderVideosPage(env.DB, tenant, settings, locale, url, localeConfig);
           break;
         case 'search':
-          html = await renderSearchPage(env.DB, tenant, settings, locale, url);
+          html = await renderSearchPage(env.DB, tenant, settings, locale, url, localeConfig);
           break;
         case 'video':
-          html = await renderVideoPage(env.DB, tenant, settings, locale, route.params.slug!);
+          html = await renderVideoPage(env.DB, tenant, settings, locale, route.params['slug']!, localeConfig);
           break;
         case 'categories':
-          html = await renderCategoriesPage(env.DB, tenant, settings, locale);
+          html = await renderCategoriesPage(env.DB, tenant, settings, locale, localeConfig);
           break;
         case 'category':
-          html = await renderCategoryPage(env.DB, tenant, settings, locale, route.params.slug!, url);
+          html = await renderCategoryPage(env.DB, tenant, settings, locale, route.params['slug']!, url, localeConfig);
           break;
         case 'performers':
-          html = await renderPerformersPage(env.DB, tenant, settings, locale);
+          html = await renderPerformersPage(env.DB, tenant, settings, locale, localeConfig);
           break;
         case 'performer':
-          html = await renderPerformerPage(env.DB, tenant, settings, locale, route.params.slug!, url);
+          html = await renderPerformerPage(env.DB, tenant, settings, locale, route.params['slug']!, url, localeConfig);
           break;
         case 'tags':
-          html = await renderTagsPage(env.DB, tenant, settings, locale);
+          html = await renderTagsPage(env.DB, tenant, settings, locale, localeConfig);
           break;
         case 'tag':
-          html = await renderTagPage(env.DB, tenant, settings, locale, route.params.slug!, url);
+          html = await renderTagPage(env.DB, tenant, settings, locale, route.params['slug']!, url, localeConfig);
           break;
         case 'channels':
-          html = await renderChannelsPage(env.DB, tenant, settings, locale);
+          html = await renderChannelsPage(env.DB, tenant, settings, locale, localeConfig);
           break;
         case 'channel':
-          html = await renderChannelPage(env.DB, tenant, settings, locale, route.params.slug!, url);
+          html = await renderChannelPage(env.DB, tenant, settings, locale, route.params['slug']!, url, localeConfig);
           break;
         case 'page':
-          html = await renderStaticPage(env.DB, tenant, settings, locale, route.params.slug!);
+          html = await renderStaticPage(env.DB, tenant, settings, locale, route.params['slug']!, localeConfig);
           break;
       }
 
@@ -1555,6 +1760,8 @@ export default {
           'X-Frame-Options': 'SAMEORIGIN',
           'X-Content-Type-Options': 'nosniff',
           'Referrer-Policy': 'strict-origin-when-cross-origin',
+          'Content-Language': locale,
+          'Vary': 'Accept-Language',
         },
       });
     } catch (err) {

@@ -8,6 +8,21 @@ interface TagOption { id: string; name: string; }
 interface PerformerOption { id: string; name: string; }
 interface ChannelOption { id: string; name: string; }
 
+interface TranslationData {
+  locale: string;
+  title: string;
+  slug: string;
+  description: string;
+  seoTitle: string;
+  seoDescription: string;
+}
+
+interface LocaleSettings {
+  enabledLocales: string[];
+  defaultLocale: string;
+  localeLabels: Record<string, string>;
+}
+
 export function VideoFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -43,20 +58,32 @@ export function VideoFormPage() {
   const [performers, setPerformers] = useState<PerformerOption[]>([]);
   const [channels, setChannels] = useState<ChannelOption[]>([]);
 
+  // Translations
+  const [showTranslations, setShowTranslations] = useState(false);
+  const [translations, setTranslations] = useState<TranslationData[]>([]);
+  const [localeSettings, setLocaleSettings] = useState<LocaleSettings | null>(null);
+  const [activeTransLocale, setActiveTransLocale] = useState('');
+  const [transForm, setTransForm] = useState<TranslationData>({ locale: '', title: '', slug: '', description: '', seoTitle: '', seoDescription: '' });
+  const [savingTrans, setSavingTrans] = useState(false);
+  const [transError, setTransError] = useState('');
+  const [transSuccess, setTransSuccess] = useState('');
+
   // Load options
   useEffect(() => {
     async function loadOptions() {
       try {
-        const [catData, tagData, perfData, chData] = await Promise.all([
+        const [catData, tagData, perfData, chData, locData] = await Promise.all([
           api<{ data: CategoryOption[] }>('/api/v1/content/categories?limit=100'),
           api<{ data: TagOption[] }>('/api/v1/content/tags?limit=200'),
           api<{ data: PerformerOption[] }>('/api/v1/content/performers?limit=200'),
           api<{ data: ChannelOption[] }>('/api/v1/content/channels?limit=100'),
+          api<LocaleSettings>('/api/v1/content/settings/locales'),
         ]);
         setCategories(catData.data);
         setTags(tagData.data);
         setPerformers(perfData.data);
         setChannels(chData.data);
+        setLocaleSettings(locData);
       } catch (err) {
         console.error('Failed to load options:', err);
       }
@@ -410,6 +437,37 @@ export function VideoFormPage() {
           </select>
         </div>
 
+        {/* Translations */}
+        {isEditing && localeSettings && localeSettings.enabledLocales.length > 1 && (
+          <div className="border-t border-gray-800 pt-4">
+            <button
+              type="button"
+              onClick={async () => {
+                setShowTranslations(true);
+                setTransError('');
+                setTransSuccess('');
+                try {
+                  const data = await api<{ data: TranslationData[] }>(`/api/v1/content/videos/${id}/translations`);
+                  setTranslations(data.data);
+                  // Set first non-default locale as active
+                  const nonDefault = localeSettings.enabledLocales.filter((l) => l !== localeSettings.defaultLocale);
+                  if (nonDefault.length > 0) {
+                    const loc = nonDefault[0]!;
+                    setActiveTransLocale(loc);
+                    const existing = data.data.find((t) => t.locale === loc);
+                    setTransForm(existing ?? { locale: loc, title: '', slug: '', description: '', seoTitle: '', seoDescription: '' });
+                  }
+                } catch (err) {
+                  console.error('Failed to load translations:', err);
+                }
+              }}
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors flex items-center gap-2 text-sm"
+            >
+              🌐 Traduções
+            </button>
+          </div>
+        )}
+
         {/* Submit */}
         <div className="flex items-center gap-3 pt-4 border-t border-gray-800">
           <button
@@ -428,6 +486,171 @@ export function VideoFormPage() {
           </button>
         </div>
       </form>
+
+      {/* Translations Modal */}
+      {showTranslations && localeSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">🌐 Traduções do Vídeo</h2>
+              <button
+                type="button"
+                onClick={() => setShowTranslations(false)}
+                className="text-gray-500 hover:text-white text-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {transError && (
+              <div className="mb-4 p-3 rounded-lg bg-red-900/30 border border-red-800/50 text-red-400 text-sm">{transError}</div>
+            )}
+            {transSuccess && (
+              <div className="mb-4 p-3 rounded-lg bg-green-900/30 border border-green-800/50 text-green-400 text-sm">{transSuccess}</div>
+            )}
+
+            {/* Locale tabs */}
+            <div className="flex gap-2 mb-4 flex-wrap">
+              {localeSettings.enabledLocales
+                .filter((loc) => loc !== localeSettings.defaultLocale)
+                .map((loc) => {
+                  const hasTranslation = translations.some((t) => t.locale === loc && t.title);
+                  return (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => {
+                        setActiveTransLocale(loc);
+                        const existing = translations.find((t) => t.locale === loc);
+                        setTransForm(existing ?? { locale: loc, title: '', slug: '', description: '', seoTitle: '', seoDescription: '' });
+                        setTransError('');
+                        setTransSuccess('');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                        activeTransLocale === loc
+                          ? 'bg-purple-600 text-white'
+                          : hasTranslation
+                            ? 'bg-green-900/30 text-green-400 border border-green-800/50'
+                            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                      }`}
+                    >
+                      {localeSettings.localeLabels[loc] ?? loc}
+                      {hasTranslation && ' ✓'}
+                    </button>
+                  );
+                })}
+            </div>
+
+            {activeTransLocale && (
+              <div className="space-y-4">
+                <div>
+                  <label className={labelClass}>Título *</label>
+                  <input
+                    type="text"
+                    value={transForm.title}
+                    onChange={(e) => setTransForm((prev) => ({ ...prev, title: e.target.value }))}
+                    className={inputClass}
+                    placeholder={`Título em ${localeSettings.localeLabels[activeTransLocale] ?? activeTransLocale}`}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Slug (auto-gerado se vazio)</label>
+                  <input
+                    type="text"
+                    value={transForm.slug}
+                    onChange={(e) => setTransForm((prev) => ({ ...prev, slug: e.target.value }))}
+                    className={inputClass}
+                    placeholder="slug-localizado"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Descrição</label>
+                  <textarea
+                    value={transForm.description}
+                    onChange={(e) => setTransForm((prev) => ({ ...prev, description: e.target.value }))}
+                    rows={3}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Título SEO</label>
+                    <input
+                      type="text"
+                      value={transForm.seoTitle}
+                      onChange={(e) => setTransForm((prev) => ({ ...prev, seoTitle: e.target.value }))}
+                      className={inputClass}
+                      placeholder="Título para mecanismos de busca"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Descrição SEO</label>
+                    <input
+                      type="text"
+                      value={transForm.seoDescription}
+                      onChange={(e) => setTransForm((prev) => ({ ...prev, seoDescription: e.target.value }))}
+                      className={inputClass}
+                      placeholder="Descrição para mecanismos de busca"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={savingTrans || !transForm.title}
+                    onClick={async () => {
+                      setSavingTrans(true);
+                      setTransError('');
+                      setTransSuccess('');
+                      try {
+                        await api(`/api/v1/content/videos/${id}/translations/${activeTransLocale}`, {
+                          method: 'PUT',
+                          body: transForm,
+                        });
+                        // Refresh translations
+                        const data = await api<{ data: TranslationData[] }>(`/api/v1/content/videos/${id}/translations`);
+                        setTranslations(data.data);
+                        setTransSuccess('Tradução salva com sucesso!');
+                        setTimeout(() => setTransSuccess(''), 3000);
+                      } catch (err) {
+                        setTransError(err instanceof Error ? err.message : 'Erro ao salvar tradução');
+                      } finally {
+                        setSavingTrans(false);
+                      }
+                    }}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors text-sm"
+                  >
+                    {savingTrans ? 'Salvando...' : 'Salvar Tradução'}
+                  </button>
+
+                  {translations.some((t) => t.locale === activeTransLocale && t.title) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm('Remover esta tradução?')) return;
+                        try {
+                          await api(`/api/v1/content/videos/${id}/translations/${activeTransLocale}`, { method: 'DELETE' });
+                          const data = await api<{ data: TranslationData[] }>(`/api/v1/content/videos/${id}/translations`);
+                          setTranslations(data.data);
+                          setTransForm({ locale: activeTransLocale, title: '', slug: '', description: '', seoTitle: '', seoDescription: '' });
+                          setTransSuccess('Tradução removida!');
+                          setTimeout(() => setTransSuccess(''), 3000);
+                        } catch (err) {
+                          setTransError(err instanceof Error ? err.message : 'Erro ao remover tradução');
+                        }
+                      }}
+                      className="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg transition-colors text-sm"
+                    >
+                      Remover
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

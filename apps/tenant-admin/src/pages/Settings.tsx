@@ -13,6 +13,13 @@ interface SiteSettings {
   customScriptsBody: string;
 }
 
+interface LocaleSettings {
+  enabledLocales: string[];
+  defaultLocale: string;
+  supportedLocales: string[];
+  localeLabels: Record<string, string>;
+}
+
 const defaultSettings: SiteSettings = {
   siteName: '',
   logoUrl: '',
@@ -27,16 +34,27 @@ const defaultSettings: SiteSettings = {
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
+  const [localeSettings, setLocaleSettings] = useState<LocaleSettings>({
+    enabledLocales: ['pt'],
+    defaultLocale: 'pt',
+    supportedLocales: [],
+    localeLabels: {},
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingLocales, setSavingLocales] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
     async function loadSettings() {
       try {
-        const data = await api<SiteSettings>('/api/v1/content/settings');
+        const [data, locales] = await Promise.all([
+          api<SiteSettings>('/api/v1/content/settings'),
+          api<LocaleSettings>('/api/v1/content/settings/locales'),
+        ]);
         setSettings({ ...defaultSettings, ...data });
+        setLocaleSettings(locales);
       } catch (err) {
         // Settings may not exist yet — use defaults
         console.error('Failed to load settings:', err);
@@ -289,6 +307,109 @@ export function SettingsPage() {
           </button>
         </div>
       </form>
+
+      {/* i18n / Locales */}
+      <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 mt-8">
+        <h2 className="text-lg font-semibold mb-4">🌐 Idiomas (i18n)</h2>
+        <p className="text-sm text-gray-400 mb-4">
+          Selecione os idiomas que deseja habilitar para o seu site. O idioma padrão será usado quando nenhum prefixo de idioma estiver na URL.
+        </p>
+
+        {localeSettings.supportedLocales.length > 0 && (
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>Idioma Padrão</label>
+              <select
+                value={localeSettings.defaultLocale}
+                onChange={(e) => {
+                  const newDefault = e.target.value;
+                  setLocaleSettings((prev) => ({
+                    ...prev,
+                    defaultLocale: newDefault,
+                    enabledLocales: prev.enabledLocales.includes(newDefault)
+                      ? prev.enabledLocales
+                      : [...prev.enabledLocales, newDefault],
+                  }));
+                }}
+                className={inputClass}
+              >
+                {localeSettings.enabledLocales.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {localeSettings.localeLabels[loc] ?? loc}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>Idiomas Habilitados</label>
+              <div className="flex flex-wrap gap-2 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                {localeSettings.supportedLocales.map((loc) => {
+                  const isEnabled = localeSettings.enabledLocales.includes(loc);
+                  const isDefault = localeSettings.defaultLocale === loc;
+                  return (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => {
+                        if (isDefault) return; // Can't disable default
+                        setLocaleSettings((prev) => ({
+                          ...prev,
+                          enabledLocales: isEnabled
+                            ? prev.enabledLocales.filter((l) => l !== loc)
+                            : [...prev.enabledLocales, loc],
+                        }));
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                        isEnabled
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      } ${isDefault ? 'ring-2 ring-yellow-500/50' : ''}`}
+                      title={isDefault ? 'Idioma padrão (não pode ser desabilitado)' : ''}
+                    >
+                      {localeSettings.localeLabels[loc] ?? loc}
+                      {isDefault && ' ★'}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-xs text-gray-500">
+                ★ = idioma padrão. Clique para habilitar/desabilitar idiomas.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                disabled={savingLocales}
+                onClick={async () => {
+                  setSavingLocales(true);
+                  setError('');
+                  setSuccess('');
+                  try {
+                    await api('/api/v1/content/settings/locales', {
+                      method: 'PUT',
+                      body: {
+                        enabledLocales: localeSettings.enabledLocales,
+                        defaultLocale: localeSettings.defaultLocale,
+                      },
+                    });
+                    setSuccess('Idiomas salvos com sucesso!');
+                    setTimeout(() => setSuccess(''), 3000);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Erro ao salvar idiomas');
+                  } finally {
+                    setSavingLocales(false);
+                  }
+                }}
+                className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+              >
+                {savingLocales ? 'Salvando...' : 'Salvar Idiomas'}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
