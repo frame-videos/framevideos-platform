@@ -1,0 +1,16 @@
+{
+  "name": "@frame-videos/advertiser-portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'TODO: implementar Sprint 10'",
+    "build": "echo 'TODO: implementar Sprint 10'",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'no source yet'",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

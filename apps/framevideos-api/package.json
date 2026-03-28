@@ -1,0 +1,28 @@
+{
+  "name": "@frame-videos/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir=dist",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist .wrangler"
+  },
+  "dependencies": {
+    "@frame-videos/shared": "workspace:*",
+    "@frame-videos/db": "workspace:*",
+    "@frame-videos/auth": "workspace:*",
+    "hono": "^4.6.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.0",
+    "wrangler": "^3.99.0"
+  }
+}

@@ -1,0 +1,63 @@
+name = "framevideos-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+# D1
+[[d1_databases]]
+binding = "DB"
+database_name = "frame-videos-db"
+database_id = "083094ae-7cfa-4fea-9f5e-8ab006498e6c"
+
+# R2
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "frame-videos-storage"
+
+# KV
+[[kv_namespaces]]
+binding = "CACHE"
+id = "c73b1250b86b4b42b108f6b2b6a3829f"
+
+[vars]
+ENVIRONMENT = "development"
+
+[env.staging]
+name = "framevideos-api-staging"
+[env.staging.vars]
+ENVIRONMENT = "staging"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "frame-videos-db"
+database_id = "083094ae-7cfa-4fea-9f5e-8ab006498e6c"
+
+[[env.staging.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "frame-videos-storage"
+
+[[env.staging.kv_namespaces]]
+binding = "CACHE"
+id = "c73b1250b86b4b42b108f6b2b6a3829f"
+
+[env.production]
+name = "framevideos-api"
+routes = [{ pattern = "api.framevideos.com/*", zone_name = "framevideos.com" }]
+[env.production.vars]
+ENVIRONMENT = "production"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "frame-videos-db"
+database_id = "083094ae-7cfa-4fea-9f5e-8ab006498e6c"
+
+[[env.production.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "frame-videos-storage"
+
+[[env.production.kv_namespaces]]
+binding = "CACHE"
+id = "c73b1250b86b4b42b108f6b2b6a3829f"

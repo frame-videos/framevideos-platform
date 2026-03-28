@@ -1,0 +1,22 @@
+{
+  "name": "@frame-videos/tenant-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'TODO: astro dev'",
+    "build": "echo 'TODO: astro build'",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@frame-videos/shared": "workspace:*",
+    "@frame-videos/ui": "workspace:*",
+    "@frame-videos/seo": "workspace:*",
+    "@frame-videos/i18n": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
