@@ -138,3 +138,4 @@ export const FEATURES = [
       'Gere títulos, descrições e tags otimizados com inteligência artificial integrada.',
   },
 ] as const;
+// v0.1.0
