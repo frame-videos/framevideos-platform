@@ -3,7 +3,7 @@
 import type { SiteSettings, TenantInfo, LocaleConfig } from '../types.js';
 import { VIDEOS_PER_PAGE } from '../constants.js';
 import { getPerformers, getPerformerBySlug, getVideos } from '../db/content.js';
-import { esc, videoGrid, pagination } from '../helpers/html.js';
+import { esc, videoGrid, pagination, firstThumbnailUrl } from '../helpers/html.js';
 import { layout } from '../templates/layout.js';
 
 export async function renderPerformersPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, localeConfig: LocaleConfig): Promise<string> {
@@ -19,7 +19,7 @@ export async function renderPerformersPage(db: D1Database, tenant: TenantInfo, s
       ${performers.map((p) => `<a href="${lp}/performer/${esc(p.slug)}" class="bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all group">
         <div class="aspect-square bg-gray-800 flex items-center justify-center">
           ${p.imageUrl
-            ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />`
+            ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" loading="lazy" width="200" height="200" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />`
             : `<svg class="w-16 h-16 text-gray-700" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`
           }
         </div>
@@ -58,7 +58,7 @@ export async function renderPerformerPage(db: D1Database, tenant: TenantInfo, se
   let content = `<div class="mb-6">
     <nav class="text-sm text-gray-500 mb-2"><a href="${lp}/performers" class="hover:text-gray-300">Modelos</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(performer.name)}</span></nav>
     <div class="flex items-start gap-4">
-      ${performer.imageUrl ? `<img src="${esc(performer.imageUrl)}" alt="${esc(performer.name)}" class="w-20 h-20 rounded-full object-cover shrink-0" />` : ''}
+      ${performer.imageUrl ? `<img src="${esc(performer.imageUrl)}" alt="${esc(performer.name)}" width="80" height="80" class="w-20 h-20 rounded-full object-cover shrink-0" />` : ''}
       <div>
         <h1 class="text-2xl font-bold">${esc(performer.name)}</h1>
         ${performer.bio ? `<p class="text-gray-400 text-sm mt-1">${esc(performer.bio)}</p>` : ''}
@@ -81,5 +81,6 @@ export async function renderPerformerPage(db: D1Database, tenant: TenantInfo, se
     localeConfig,
     domain: tenant.domain,
     currentPath: `/performer/${slug}`,
+    lcpImage: firstThumbnailUrl(videos),
   });
 }

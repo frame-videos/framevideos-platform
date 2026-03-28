@@ -3,7 +3,7 @@
 import type { SiteSettings, TenantInfo, LocaleConfig } from '../types.js';
 import { VIDEOS_PER_PAGE } from '../constants.js';
 import { getTags, getTagBySlug, getVideos } from '../db/content.js';
-import { esc, videoGrid, pagination } from '../helpers/html.js';
+import { esc, videoGrid, pagination, firstThumbnailUrl } from '../helpers/html.js';
 import { layout } from '../templates/layout.js';
 
 export async function renderTagsPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, localeConfig: LocaleConfig): Promise<string> {
@@ -66,5 +66,6 @@ export async function renderTagPage(db: D1Database, tenant: TenantInfo, settings
     localeConfig,
     domain: tenant.domain,
     currentPath: `/tag/${slug}`,
+    lcpImage: firstThumbnailUrl(videos),
   });
 }

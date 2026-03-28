@@ -26,13 +26,14 @@ export function formatViews(count: number): string {
   return String(count);
 }
 
-export function videoCard(v: VideoItem, localePrefix = ''): string {
+export function videoCard(v: VideoItem, localePrefix = '', eager = false): string {
   const dur = formatDuration(v.durationSeconds);
   const views = formatViews(v.viewCount);
+  const loadAttr = eager ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"';
   return `<a href="${localePrefix}/video/${esc(v.slug)}" class="group block bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all">
   <div class="relative aspect-video bg-gray-800">
     ${v.thumbnailUrl
-      ? `<img src="${esc(v.thumbnailUrl)}" alt="${esc(v.title)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />`
+      ? `<img src="${esc(v.thumbnailUrl)}" alt="${esc(v.title)}" ${loadAttr} width="320" height="180" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />`
       : `<div class="w-full h-full flex items-center justify-center text-gray-600"><svg class="w-12 h-12" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>`
     }
     ${dur ? `<span class="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded font-mono">${dur}</span>` : ''}
@@ -51,7 +52,13 @@ export function videoGrid(videos: VideoItem[], localePrefix = ''): string {
       <p class="text-lg">Nenhum vídeo encontrado</p>
     </div>`;
   }
-  return `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">${videos.map((v) => videoCard(v, localePrefix)).join('')}</div>`;
+  return `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">${videos.map((v, i) => videoCard(v, localePrefix, i === 0)).join('')}</div>`;
+}
+
+/** Returns the thumbnail URL of the first video in an array, for LCP preload hints */
+export function firstThumbnailUrl(videos: VideoItem[]): string | undefined {
+  const first = videos[0];
+  return videos.length > 0 && first && first.thumbnailUrl ? first.thumbnailUrl : undefined;
 }
 
 export function pagination(page: number, totalPages: number, baseUrl: string): string {

@@ -181,8 +181,7 @@ export default {
               'X-Cache': 'HIT',
             },
           });
-          addSecurityHeaders(response.headers);
-          return response;
+          return addSecurityHeaders(response);
         }
       }
 

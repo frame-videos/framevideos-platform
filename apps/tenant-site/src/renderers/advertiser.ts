@@ -14,21 +14,57 @@ function advertiserLayout(settings: SiteSettings, tenant: TenantInfo, title: str
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${esc(pageTitle)}</title>
   <meta name="robots" content="noindex, nofollow">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: { extend: { colors: { primary: '${esc(settings.colorPrimary)}', secondary: '${esc(settings.colorSecondary)}' } } }
-    }
-  </script>
-  <style>body { background: #0a0a0f; }</style>
+  <meta name="theme-color" content="#0a0a0f">
+  <style>
+    *,::after,::before{box-sizing:border-box;border:0 solid #e5e7eb;margin:0;padding:0}
+    html{-webkit-text-size-adjust:100%;font-feature-settings:normal;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;line-height:1.5;tab-size:4}
+    body{background:#0a0a0f;color:#f3f4f6;line-height:inherit;min-height:100vh}
+    a{color:inherit;text-decoration:inherit}
+    button,input,select,textarea{font:inherit;color:inherit;background:transparent}
+    table{border-collapse:collapse;text-indent:0}
+    img,svg,video{display:block;max-width:100%}
+    .dark{color-scheme:dark}
+    .min-h-screen{min-height:100vh}
+    .bg-\\[\\#0a0a0f\\]{background:#0a0a0f}.bg-\\[\\#0d0d14\\]\\/95{background:rgba(13,13,20,.95)}
+    .bg-gray-700{background:#374151}.bg-gray-800{background:#1f2937}.bg-gray-800\\/50{background:rgba(31,41,55,.5)}.bg-gray-900{background:#111827}
+    .bg-purple-500{background:#a855f7}.bg-purple-600{background:#9333ea}.bg-red-500\\/10{background:rgba(239,68,68,.1)}
+    .bg-green-500\\/20{background:rgba(34,197,94,.2)}.bg-yellow-500\\/20{background:rgba(234,179,8,.2)}.bg-gray-500\\/20{background:rgba(107,114,128,.2)}
+    .hover\\:bg-purple-700:hover{background:#7e22ce}
+    .text-gray-100{color:#f3f4f6}.text-gray-200{color:#e5e7eb}.text-gray-300{color:#d1d5db}.text-gray-400{color:#9ca3af}.text-gray-500{color:#6b7280}
+    .text-white{color:#fff}.text-green-400{color:#4ade80}.text-yellow-400{color:#facc15}.text-red-400{color:#f87171}
+    .text-transparent{color:transparent}
+    .hover\\:text-white:hover{color:#fff}.hover\\:text-red-400:hover{color:#f87171}
+    .text-xs{font-size:.75rem;line-height:1rem}.text-sm{font-size:.875rem;line-height:1.25rem}.text-lg{font-size:1.125rem;line-height:1.75rem}.text-xl{font-size:1.25rem;line-height:1.75rem}.text-2xl{font-size:1.5rem;line-height:2rem}
+    .font-medium{font-weight:500}.font-semibold{font-weight:600}.font-bold{font-weight:700}
+    .uppercase{text-transform:uppercase}.text-left{text-align:left}.text-right{text-align:right}.text-center{text-align:center}
+    .flex{display:flex}.grid{display:grid}.block{display:block}.hidden{display:none}
+    .items-center{align-items:center}.justify-between{justify-content:space-between}
+    .gap-4{gap:1rem}
+    .grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    @media(min-width:768px){.md\\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}}
+    .w-full{width:100%}.w-auto{width:auto}.h-8{height:2rem}.h-16{height:4rem}.h-1\\.5{height:.375rem}
+    .max-w-6xl{max-width:72rem}.max-w-md{max-width:28rem}.mx-auto{margin-left:auto;margin-right:auto}
+    .p-3{padding:.75rem}.p-4{padding:1rem}.p-6{padding:1.5rem}.p-8{padding:2rem}
+    .px-2{padding-left:.5rem;padding-right:.5rem}.px-3{padding-left:.75rem;padding-right:.75rem}.px-4{padding-left:1rem;padding-right:1rem}.px-6{padding-left:1.5rem;padding-right:1.5rem}
+    .py-2{padding-top:.5rem;padding-bottom:.5rem}.py-2\\.5{padding-top:.625rem;padding-bottom:.625rem}.py-8{padding-top:2rem;padding-bottom:2rem}.py-0\\.5{padding-top:.125rem;padding-bottom:.125rem}
+    .mb-1{margin-bottom:.25rem}.mb-2{margin-bottom:.5rem}.mb-4{margin-bottom:1rem}.mb-6{margin-bottom:1.5rem}.mb-8{margin-bottom:2rem}
+    .mt-1{margin-top:.25rem}.mt-2{margin-top:.5rem}.mt-16{margin-top:4rem}
+    .border{border-width:1px}.border-b{border-bottom-width:1px}
+    .border-gray-700{border-color:#374151}.border-gray-800{border-color:#1f2937}.border-gray-800\\/50{border-color:rgba(31,41,55,.5)}.border-red-500\\/20{border-color:rgba(239,68,68,.2)}
+    .rounded-lg{border-radius:.5rem}.rounded-xl{border-radius:.75rem}.rounded-full{border-radius:9999rem}
+    .space-y-3>:not([hidden])~:not([hidden]){margin-top:.75rem}.space-y-4>:not([hidden])~:not([hidden]){margin-top:1rem}
+    .transition-colors{transition-property:color,background-color,border-color;transition-duration:.15s}
+    .focus\\:outline-none:focus{outline:none}.focus\\:ring-2:focus{box-shadow:0 0 0 2px var(--tw-ring-color)}.focus\\:ring-purple-500\\/50:focus{--tw-ring-color:rgba(168,85,247,.5)}
+    .bg-gradient-to-r{background-image:linear-gradient(to right,var(--tw-gradient-stops))}.from-purple-400{--tw-gradient-from:#c084fc;--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to,transparent)}.to-indigo-400{--tw-gradient-to:#818cf8}
+    .bg-clip-text{-webkit-background-clip:text;background-clip:text}
+  </style>
 </head>
 <body class="bg-[#0a0a0f] text-gray-100 min-h-screen">
   <header class="bg-[#0d0d14]/95 border-b border-gray-800/50">
     <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
       <div class="flex items-center gap-4">
         ${settings.siteLogoUrl
-          ? `<img src="${esc(settings.siteLogoUrl)}" alt="${esc(settings.siteName)}" class="h-8 w-auto" />`
+          ? `<img src="${esc(settings.siteLogoUrl)}" alt="${esc(settings.siteName)}" width="120" height="32" class="h-8 w-auto" />`
           : `<span class="text-xl font-bold bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">${esc(settings.siteName)}</span>`
         }
         <span class="text-sm text-gray-500">Portal do Anunciante</span>

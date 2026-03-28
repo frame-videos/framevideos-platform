@@ -3,7 +3,7 @@
 import type { SiteSettings, TenantInfo, LocaleConfig } from '../types.js';
 import { VIDEOS_PER_PAGE } from '../constants.js';
 import { getCategories, getCategoryBySlug, getVideos } from '../db/content.js';
-import { esc, videoGrid, pagination } from '../helpers/html.js';
+import { esc, videoGrid, pagination, firstThumbnailUrl } from '../helpers/html.js';
 import { layout } from '../templates/layout.js';
 
 export async function renderCategoriesPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, localeConfig: LocaleConfig): Promise<string> {
@@ -79,5 +79,6 @@ export async function renderCategoryPage(db: D1Database, tenant: TenantInfo, set
     localeConfig,
     domain: tenant.domain,
     currentPath: `/category/${slug}`,
+    lcpImage: firstThumbnailUrl(videos),
   });
 }

@@ -3,7 +3,7 @@
 import type { SiteSettings, TenantInfo, LocaleConfig } from '../types.js';
 import { VIDEOS_PER_PAGE } from '../constants.js';
 import { getVideos, getTags } from '../db/content.js';
-import { esc, videoGrid, pagination } from '../helpers/html.js';
+import { esc, videoGrid, pagination, firstThumbnailUrl } from '../helpers/html.js';
 import { layout } from '../templates/layout.js';
 
 export async function renderSearchPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, url: URL, localeConfig: LocaleConfig): Promise<string> {
@@ -13,6 +13,7 @@ export async function renderSearchPage(db: D1Database, tenant: TenantInfo, setti
   const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   let content = '';
+  let lcpImage: string | undefined;
 
   content += `<section class="mb-8">
     <h1 class="text-2xl font-bold mb-4">${query ? `Resultados para "${esc(query)}"` : 'Buscar Vídeos'}</h1>
@@ -37,6 +38,7 @@ export async function renderSearchPage(db: D1Database, tenant: TenantInfo, setti
       search: query,
     });
     const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
+    lcpImage = firstThumbnailUrl(videos);
 
     content += `<p class="text-gray-500 text-sm mb-4">${total} resultado${total !== 1 ? 's' : ''} encontrado${total !== 1 ? 's' : ''}</p>`;
     content += videoGrid(videos, lp);
@@ -68,5 +70,6 @@ export async function renderSearchPage(db: D1Database, tenant: TenantInfo, setti
     localeConfig,
     domain: tenant.domain,
     currentPath: '/search',
+    lcpImage,
   });
 }

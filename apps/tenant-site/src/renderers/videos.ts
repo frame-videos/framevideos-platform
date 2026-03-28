@@ -3,7 +3,7 @@
 import type { SiteSettings, TenantInfo, LocaleConfig } from '../types.js';
 import { VIDEOS_PER_PAGE } from '../constants.js';
 import { getVideos, getVideoBySlug } from '../db/content.js';
-import { esc, formatDuration, formatViews, videoGrid, pagination } from '../helpers/html.js';
+import { esc, formatDuration, formatViews, videoGrid, pagination, firstThumbnailUrl } from '../helpers/html.js';
 import { layout } from '../templates/layout.js';
 
 export async function renderVideosPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, url: URL, localeConfig: LocaleConfig): Promise<string> {
@@ -34,6 +34,7 @@ export async function renderVideosPage(db: D1Database, tenant: TenantInfo, setti
     localeConfig,
     domain: tenant.domain,
     currentPath: '/videos',
+    lcpImage: firstThumbnailUrl(videos),
   });
 }
 
@@ -59,7 +60,7 @@ export async function renderVideoPage(db: D1Database, tenant: TenantInfo, settin
     </div>`;
   } else if (video.thumbnail_url) {
     playerHtml = `<div class="relative aspect-video bg-black rounded-xl overflow-hidden mb-4 shadow-2xl shadow-black/50 ring-1 ring-gray-800 flex items-center justify-center">
-      <img src="${esc(video.thumbnail_url)}" alt="${esc(video.title)}" class="max-w-full max-h-full object-contain" />
+      <img src="${esc(video.thumbnail_url)}" alt="${esc(video.title)}" width="640" height="360" class="max-w-full max-h-full object-contain" />
       <div class="absolute inset-0 flex items-center justify-center bg-black/30">
         <div class="w-16 h-16 rounded-full bg-white/10 backdrop-blur flex items-center justify-center">
           <svg class="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -87,7 +88,7 @@ export async function renderVideoPage(db: D1Database, tenant: TenantInfo, settin
         <h3 class="text-sm font-medium text-gray-400 mb-2">Modelos</h3>
         <div class="flex flex-wrap gap-2">
           ${video.performers.map((p) => `<a href="${lp}/performer/${esc(p.slug)}" class="flex items-center gap-2 bg-gray-900 rounded-full px-3 py-1.5 text-sm hover:bg-gray-800 transition-colors">
-            ${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" class="w-6 h-6 rounded-full object-cover" />` : ''}
+            ${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" width="24" height="24" class="w-6 h-6 rounded-full object-cover" />` : ''}
             <span>${esc(p.name)}</span>
           </a>`).join('')}
         </div>
@@ -113,7 +114,7 @@ export async function renderVideoPage(db: D1Database, tenant: TenantInfo, settin
       <div class="flex flex-col gap-3">
         ${video.related.map((r) => `<a href="${lp}/video/${esc(r.slug)}" class="flex gap-3 group">
           <div class="relative w-40 shrink-0 aspect-video bg-gray-800 rounded overflow-hidden">
-            ${r.thumbnailUrl ? `<img src="${esc(r.thumbnailUrl)}" alt="${esc(r.title)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />` : ''}
+            ${r.thumbnailUrl ? `<img src="${esc(r.thumbnailUrl)}" alt="${esc(r.title)}" loading="lazy" width="160" height="90" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />` : ''}
             ${r.durationSeconds ? `<span class="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 py-0.5 rounded font-mono">${formatDuration(r.durationSeconds)}</span>` : ''}
           </div>
           <div class="min-w-0">

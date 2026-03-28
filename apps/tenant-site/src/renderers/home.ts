@@ -2,7 +2,7 @@
 
 import type { SiteSettings, TenantInfo, LocaleConfig } from '../types.js';
 import { getVideos, getCategories, getPerformers } from '../db/content.js';
-import { esc, videoGrid } from '../helpers/html.js';
+import { esc, videoGrid, firstThumbnailUrl } from '../helpers/html.js';
 import { layout } from '../templates/layout.js';
 
 export async function renderHomepage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, localeConfig: LocaleConfig): Promise<string> {
@@ -57,7 +57,7 @@ export async function renderHomepage(db: D1Database, tenant: TenantInfo, setting
         ${featuredPerformers.map((p) => `<a href="${lp}/performer/${esc(p.slug)}" class="bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all group">
           <div class="aspect-square bg-gray-800 flex items-center justify-center">
             ${p.imageUrl
-              ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />`
+              ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" loading="lazy" width="200" height="200" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />`
               : `<svg class="w-16 h-16 text-gray-700" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`
             }
           </div>
@@ -96,5 +96,6 @@ export async function renderHomepage(db: D1Database, tenant: TenantInfo, setting
     localeConfig,
     domain: tenant.domain,
     currentPath: '/',
+    lcpImage: firstThumbnailUrl(recentVideos),
   });
 }
