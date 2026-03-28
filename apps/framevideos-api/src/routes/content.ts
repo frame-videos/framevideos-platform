@@ -1865,4 +1865,487 @@ content.put('/settings', async (c) => {
   return c.json({ success: true });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// LOCALE SETTINGS (i18n)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SUPPORTED_LOCALES = ['pt', 'en', 'es', 'fr', 'de', 'it', 'ja', 'zh', 'ko', 'ru', 'nl', 'pl', 'tr', 'ar'] as const;
+
+const LOCALE_LABELS: Record<string, string> = {
+  pt: 'Português', en: 'English', es: 'Español', fr: 'Français',
+  de: 'Deutsch', it: 'Italiano', ja: '日本語', zh: '中文',
+  ko: '한국어', ru: 'Русский', nl: 'Nederlands', pl: 'Polski',
+  tr: 'Türkçe', ar: 'العربية',
+};
+
+// GET /content/settings/locales — get enabled locales for tenant
+content.get('/settings/locales', async (c) => {
+  const tenantId = c.get('tenantId')!;
+  const db = new D1Client(c.env.DB);
+
+  const enabledRow = await db.queryOne<{ config_value: string }>(
+    "SELECT config_value FROM tenant_configs WHERE tenant_id = ? AND config_key = 'enabled_locales'",
+    [tenantId],
+  );
+  const defaultRow = await db.queryOne<{ config_value: string }>(
+    "SELECT config_value FROM tenant_configs WHERE tenant_id = ? AND config_key = 'default_locale'",
+    [tenantId],
+  );
+
+  let enabledLocales: string[];
+  try {
+    enabledLocales = enabledRow ? JSON.parse(enabledRow.config_value) : ['pt'];
+  } catch {
+    enabledLocales = ['pt'];
+  }
+  const defaultLocale = defaultRow?.config_value ?? 'pt';
+
+  return c.json({
+    enabledLocales,
+    defaultLocale,
+    supportedLocales: SUPPORTED_LOCALES,
+    localeLabels: LOCALE_LABELS,
+  });
+});
+
+// PUT /content/settings/locales — update enabled locales for tenant
+const updateLocalesSchema = z.object({
+  enabledLocales: z.array(z.string()).min(1, 'Pelo menos um idioma deve estar habilitado'),
+  defaultLocale: z.string().min(2).max(5),
+});
+
+content.put('/settings/locales', async (c) => {
+  const tenantId = c.get('tenantId')!;
+  const body = await c.req.json();
+  const parsed = updateLocalesSchema.safeParse(body);
+
+  if (!parsed.success) {
+    throw new ValidationError('Dados inválidos', parsed.error.issues.map((i) => ({
+      field: i.path.join('.'),
+      message: i.message,
+    })));
+  }
+
+  const { enabledLocales, defaultLocale } = parsed.data;
+
+  // Validate all locales are supported
+  for (const loc of enabledLocales) {
+    if (!(SUPPORTED_LOCALES as readonly string[]).includes(loc)) {
+      throw new ValidationError(`Locale não suportado: ${loc}`);
+    }
+  }
+  if (!(SUPPORTED_LOCALES as readonly string[]).includes(defaultLocale)) {
+    throw new ValidationError(`Locale padrão não suportado: ${defaultLocale}`);
+  }
+  if (!enabledLocales.includes(defaultLocale)) {
+    throw new ValidationError('O locale padrão deve estar na lista de locales habilitados');
+  }
+
+  const db = new D1Client(c.env.DB);
+
+  await db.batch([
+    {
+      sql: `INSERT INTO tenant_configs (id, tenant_id, config_key, config_value)
+            VALUES (?, ?, 'enabled_locales', ?)
+            ON CONFLICT(tenant_id, config_key) DO UPDATE SET config_value = excluded.config_value`,
+      params: [generateUlid(), tenantId, JSON.stringify(enabledLocales)],
+    },
+    {
+      sql: `INSERT INTO tenant_configs (id, tenant_id, config_key, config_value)
+            VALUES (?, ?, 'default_locale', ?)
+            ON CONFLICT(tenant_id, config_key) DO UPDATE SET config_value = excluded.config_value`,
+      params: [generateUlid(), tenantId, defaultLocale],
+    },
+  ]);
+
+  return c.json({ success: true });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TRANSLATION CRUD (i18n) — Generic for all content types
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const translationSchema = z.object({
+  title: z.string().min(1, 'Título é obrigatório').max(500),
+  slug: z.string().max(300).optional(),
+  description: z.string().max(10000).optional().default(''),
+  seoTitle: z.string().max(200).optional().default(''),
+  seoDescription: z.string().max(500).optional().default(''),
+});
+
+// Translation table config per content type
+interface TranslationConfig {
+  table: string;
+  parentTable: string;
+  parentIdColumn: string;
+  fields: string[];
+  hasContent?: boolean; // pages have 'content' instead of 'description'
+}
+
+const TRANSLATION_CONFIGS: Record<string, TranslationConfig> = {
+  videos: {
+    table: 'video_translations',
+    parentTable: 'videos',
+    parentIdColumn: 'video_id',
+    fields: ['title', 'slug', 'description', 'seo_title', 'seo_description'],
+  },
+  categories: {
+    table: 'category_translations',
+    parentTable: 'categories',
+    parentIdColumn: 'category_id',
+    fields: ['name', 'slug', 'description', 'seo_title', 'seo_description'],
+  },
+  tags: {
+    table: 'tag_translations',
+    parentTable: 'tags',
+    parentIdColumn: 'tag_id',
+    fields: ['name', 'slug', 'seo_title', 'seo_description'],
+  },
+  performers: {
+    table: 'performer_translations',
+    parentTable: 'performers',
+    parentIdColumn: 'performer_id',
+    fields: ['name', 'slug', 'bio', 'seo_title', 'seo_description'],
+  },
+  channels: {
+    table: 'channel_translations',
+    parentTable: 'channels',
+    parentIdColumn: 'channel_id',
+    fields: ['name', 'slug', 'description', 'seo_title', 'seo_description'],
+  },
+  pages: {
+    table: 'page_translations',
+    parentTable: 'pages',
+    parentIdColumn: 'page_id',
+    fields: ['title', 'slug', 'content', 'seo_title', 'seo_description'],
+    hasContent: true,
+  },
+};
+
+/** Ensure unique slug in translation table per tenant+locale */
+async function ensureUniqueTranslationSlug(
+  db: D1Client,
+  config: TranslationConfig,
+  tenantId: string,
+  locale: string,
+  slug: string,
+  excludeParentId?: string,
+): Promise<string> {
+  let candidate = slug;
+  let counter = 0;
+  const maxAttempts = 20;
+
+  while (counter < maxAttempts) {
+    const params: unknown[] = [locale, candidate, tenantId];
+    let excludeClause = '';
+    if (excludeParentId) {
+      excludeClause = ` AND t.${config.parentIdColumn} != ?`;
+      params.push(excludeParentId);
+    }
+
+    const existing = await db.queryOne<{ id: string }>(
+      `SELECT t.id FROM ${config.table} t
+       JOIN ${config.parentTable} p ON p.id = t.${config.parentIdColumn}
+       WHERE t.locale = ? AND t.slug = ? AND p.tenant_id = ?${excludeClause}`,
+      params,
+    );
+
+    if (!existing) return candidate;
+    counter++;
+    candidate = `${slug}-${counter}`;
+  }
+
+  return `${slug}-${Date.now().toString(36)}`;
+}
+
+// Register translation routes for each content type
+for (const [contentType, config] of Object.entries(TRANSLATION_CONFIGS)) {
+  const singularParam = contentType === 'categories' ? 'categories' : contentType;
+
+  // GET /content/{type}/:id/translations — list all translations
+  content.get(`/${contentType}/:id/translations`, async (c) => {
+    const tenantId = c.get('tenantId')!;
+    const parentId = c.req.param('id');
+    const db = new D1Client(c.env.DB);
+
+    // Verify parent exists and belongs to tenant
+    const parent = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ${config.parentTable} WHERE id = ? AND tenant_id = ?`,
+      [parentId, tenantId],
+    );
+    if (!parent) throw new NotFoundError(contentType, parentId);
+
+    const translations = await db.query<Record<string, unknown>>(
+      `SELECT * FROM ${config.table} WHERE ${config.parentIdColumn} = ?`,
+      [parentId],
+    );
+
+    return c.json({
+      data: translations.map((t) => {
+        const result: Record<string, unknown> = {
+          locale: t.locale,
+          title: t.title ?? t.name ?? '',
+          slug: t.slug ?? '',
+          description: t.description ?? t.bio ?? t.content ?? '',
+          seoTitle: t.seo_title ?? '',
+          seoDescription: t.seo_description ?? '',
+        };
+        return result;
+      }),
+    });
+  });
+
+  // PUT /content/{type}/:id/translations/:locale — create/update translation
+  content.put(`/${contentType}/:id/translations/:locale`, async (c) => {
+    const tenantId = c.get('tenantId')!;
+    const parentId = c.req.param('id');
+    const locale = c.req.param('locale');
+    const db = new D1Client(c.env.DB);
+
+    // Validate locale
+    if (!(SUPPORTED_LOCALES as readonly string[]).includes(locale)) {
+      throw new ValidationError(`Locale não suportado: ${locale}`);
+    }
+
+    // Verify parent exists
+    const parent = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ${config.parentTable} WHERE id = ? AND tenant_id = ?`,
+      [parentId, tenantId],
+    );
+    if (!parent) throw new NotFoundError(contentType, parentId);
+
+    const body = await c.req.json();
+    const parsed = translationSchema.safeParse(body);
+
+    if (!parsed.success) {
+      throw new ValidationError('Dados inválidos', parsed.error.issues.map((i) => ({
+        field: i.path.join('.'),
+        message: i.message,
+      })));
+    }
+
+    const data = parsed.data;
+
+    // Generate slug from title if not provided
+    const rawSlug = data.slug ? slugify(data.slug) : slugify(data.title);
+    const slug = await ensureUniqueTranslationSlug(db, config, tenantId, locale, rawSlug || `${contentType.slice(0, 3)}-${parentId.slice(0, 8).toLowerCase()}`, parentId);
+
+    // Check if translation exists
+    const existing = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ${config.table} WHERE ${config.parentIdColumn} = ? AND locale = ?`,
+      [parentId, locale],
+    );
+
+    // Determine field names based on content type
+    const nameField = config.fields.includes('title') ? 'title' : 'name';
+    const descField = config.hasContent ? 'content' : (config.fields.includes('description') ? 'description' : (config.fields.includes('bio') ? 'bio' : null));
+
+    if (existing) {
+      const updates: string[] = [`${nameField} = ?`, 'slug = ?', 'seo_title = ?', 'seo_description = ?'];
+      const params: unknown[] = [data.title, slug, data.seoTitle, data.seoDescription];
+
+      if (descField) {
+        updates.push(`${descField} = ?`);
+        params.push(data.description);
+      }
+
+      params.push(existing.id);
+      await db.execute(
+        `UPDATE ${config.table} SET ${updates.join(', ')} WHERE id = ?`,
+        params,
+      );
+    } else {
+      const columns = ['id', config.parentIdColumn, 'locale', nameField, 'slug', 'seo_title', 'seo_description'];
+      const values: unknown[] = [generateUlid(), parentId, locale, data.title, slug, data.seoTitle, data.seoDescription];
+
+      if (descField) {
+        columns.push(descField);
+        values.push(data.description);
+      }
+
+      await db.execute(
+        `INSERT INTO ${config.table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+        values,
+      );
+    }
+
+    return c.json({ success: true, slug });
+  });
+
+  // DELETE /content/{type}/:id/translations/:locale — remove translation
+  content.delete(`/${contentType}/:id/translations/:locale`, async (c) => {
+    const tenantId = c.get('tenantId')!;
+    const parentId = c.req.param('id');
+    const locale = c.req.param('locale');
+    const db = new D1Client(c.env.DB);
+
+    // Verify parent exists
+    const parent = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ${config.parentTable} WHERE id = ? AND tenant_id = ?`,
+      [parentId, tenantId],
+    );
+    if (!parent) throw new NotFoundError(contentType, parentId);
+
+    // Don't allow deleting the default locale translation
+    const tenant = await db.queryOne<{ default_locale: string }>(
+      'SELECT default_locale FROM tenants WHERE id = ?',
+      [tenantId],
+    );
+    const defaultLocale = tenant?.default_locale ?? 'pt_BR';
+
+    // Check against both old and new locale formats
+    const defaultRow = await db.queryOne<{ config_value: string }>(
+      "SELECT config_value FROM tenant_configs WHERE tenant_id = ? AND config_key = 'default_locale'",
+      [tenantId],
+    );
+    const configDefaultLocale = defaultRow?.config_value ?? defaultLocale;
+
+    if (locale === configDefaultLocale || locale === defaultLocale) {
+      throw new ValidationError('Não é possível remover a tradução do idioma padrão');
+    }
+
+    await db.execute(
+      `DELETE FROM ${config.table} WHERE ${config.parentIdColumn} = ? AND locale = ?`,
+      [parentId, locale],
+    );
+
+    return c.json({ success: true });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REDIRECTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const createRedirectSchema = z.object({
+  fromPath: z.string().min(1, 'Caminho de origem é obrigatório').max(500),
+  toPath: z.string().min(1, 'Caminho de destino é obrigatório').max(500),
+  statusCode: z.number().int().refine((v) => v === 301 || v === 302, 'Status deve ser 301 ou 302'),
+});
+
+const updateRedirectSchema = createRedirectSchema.partial();
+
+// GET /content/redirects
+content.get('/redirects', async (c) => {
+  const tenantId = c.get('tenantId')!;
+  const db = new D1Client(c.env.DB);
+  const { page, limit, offset } = paginationParams(c, 50);
+
+  const countResult = await db.queryOne<{ total: number }>(
+    'SELECT COUNT(*) as total FROM redirects WHERE tenant_id = ?',
+    [tenantId],
+  );
+  const total = countResult?.total ?? 0;
+
+  const redirects = await db.query<{
+    id: string; from_path: string; to_path: string; status_code: number; created_at: string;
+  }>(
+    `SELECT id, from_path, to_path, status_code, created_at
+     FROM redirects WHERE tenant_id = ?
+     ORDER BY created_at DESC
+     LIMIT ? OFFSET ?`,
+    [tenantId, limit, offset],
+  );
+
+  return c.json({
+    data: redirects.map((r) => ({
+      id: r.id,
+      fromPath: r.from_path,
+      toPath: r.to_path,
+      statusCode: r.status_code,
+      createdAt: r.created_at,
+    })),
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  });
+});
+
+// POST /content/redirects
+content.post('/redirects', async (c) => {
+  const tenantId = c.get('tenantId')!;
+  const body = await c.req.json();
+  const parsed = createRedirectSchema.safeParse(body);
+
+  if (!parsed.success) {
+    throw new ValidationError('Dados inválidos', parsed.error.issues.map((i) => ({
+      field: i.path.join('.'),
+      message: i.message,
+    })));
+  }
+
+  const { fromPath, toPath, statusCode } = parsed.data;
+  const db = new D1Client(c.env.DB);
+
+  // Check for duplicate from_path
+  const existing = await db.queryOne<{ id: string }>(
+    'SELECT id FROM redirects WHERE tenant_id = ? AND from_path = ?',
+    [tenantId, fromPath],
+  );
+  if (existing) {
+    throw new ConflictError(`Já existe um redirect para o caminho: ${fromPath}`);
+  }
+
+  const id = generateUlid();
+  await db.execute(
+    `INSERT INTO redirects (id, tenant_id, from_path, to_path, status_code) VALUES (?, ?, ?, ?, ?)`,
+    [id, tenantId, fromPath, toPath, statusCode],
+  );
+
+  return c.json({ id }, 201);
+});
+
+// PUT /content/redirects/:id
+content.put('/redirects/:id', async (c) => {
+  const tenantId = c.get('tenantId')!;
+  const redirectId = c.req.param('id');
+  const body = await c.req.json();
+  const parsed = updateRedirectSchema.safeParse(body);
+
+  if (!parsed.success) {
+    throw new ValidationError('Dados inválidos', parsed.error.issues.map((i) => ({
+      field: i.path.join('.'),
+      message: i.message,
+    })));
+  }
+
+  const data = parsed.data;
+  const db = new D1Client(c.env.DB);
+
+  const existing = await db.queryOne<{ id: string }>(
+    'SELECT id FROM redirects WHERE id = ? AND tenant_id = ?',
+    [redirectId, tenantId],
+  );
+  if (!existing) throw new NotFoundError('Redirect', redirectId);
+
+  const updates: string[] = [];
+  const params: unknown[] = [];
+
+  if (data.fromPath !== undefined) { updates.push('from_path = ?'); params.push(data.fromPath); }
+  if (data.toPath !== undefined) { updates.push('to_path = ?'); params.push(data.toPath); }
+  if (data.statusCode !== undefined) { updates.push('status_code = ?'); params.push(data.statusCode); }
+
+  if (updates.length > 0) {
+    params.push(redirectId);
+    await db.execute(`UPDATE redirects SET ${updates.join(', ')} WHERE id = ?`, params);
+  }
+
+  return c.json({ success: true });
+});
+
+// DELETE /content/redirects/:id
+content.delete('/redirects/:id', async (c) => {
+  const tenantId = c.get('tenantId')!;
+  const redirectId = c.req.param('id');
+  const db = new D1Client(c.env.DB);
+
+  const existing = await db.queryOne<{ id: string }>(
+    'SELECT id FROM redirects WHERE id = ? AND tenant_id = ?',
+    [redirectId, tenantId],
+  );
+  if (!existing) throw new NotFoundError('Redirect', redirectId);
+
+  await db.execute('DELETE FROM redirects WHERE id = ?', [redirectId]);
+
+  return c.json({ success: true });
+});
+
 export { content };

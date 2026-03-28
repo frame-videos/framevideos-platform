@@ -11,12 +11,30 @@ interface Env {
   ENVIRONMENT: string;
 }
 
+// ─── i18n Constants ──────────────────────────────────────────────────────────
+
+const SUPPORTED_LOCALES = ['pt', 'en', 'es', 'fr', 'de', 'it', 'ja', 'zh', 'ko', 'ru', 'nl', 'pl', 'tr', 'ar'] as const;
+
+const LOCALE_LABELS: Record<string, string> = {
+  pt: 'Português', en: 'English', es: 'Español', fr: 'Français',
+  de: 'Deutsch', it: 'Italiano', ja: '日本語', zh: '中文',
+  ko: '한국어', ru: 'Русский', nl: 'Nederlands', pl: 'Polski',
+  tr: 'Türkçe', ar: 'العربية',
+};
+
+interface LocaleConfig {
+  enabledLocales: string[];
+  defaultLocale: string;
+}
+
 interface TenantInfo {
   tenantId: string;
   tenantName: string;
   tenantSlug: string;
   domain: string;
   isPrimary: boolean;
+  planSlug: string;
+  isWhiteLabel: boolean;
 }
 
 interface SiteSettings {
@@ -73,21 +91,23 @@ async function resolveTenant(
     }
 
     const result = await db
-      .prepare(`SELECT t.id, t.name, t.slug FROM tenants t WHERE t.slug = ? AND t.status IN ('active', 'trial') LIMIT 1`)
+      .prepare(`SELECT t.id, t.name, t.slug, COALESCE(p.slug, 'free') as plan_slug FROM tenants t LEFT JOIN subscriptions s ON s.tenant_id = t.id AND s.status IN ('active', 'trialing') LEFT JOIN plans p ON p.id = s.plan_id WHERE t.slug = ? AND t.status IN ('active', 'trial') LIMIT 1`)
       .bind(slug)
-      .first<{ id: string; name: string; slug: string }>();
+      .first<{ id: string; name: string; slug: string; plan_slug: string }>();
 
     if (result) {
-      tenant = { tenantId: result.id, tenantName: result.name, tenantSlug: result.slug, domain: hostname, isPrimary: false };
+      const isWL = result.plan_slug === 'enterprise';
+      tenant = { tenantId: result.id, tenantName: result.name, tenantSlug: result.slug, domain: hostname, isPrimary: false, planSlug: result.plan_slug, isWhiteLabel: isWL };
     }
   } else {
     const result = await db
-      .prepare(`SELECT d.tenant_id, d.domain, d.is_primary, t.name, t.slug FROM domains d JOIN tenants t ON t.id = d.tenant_id WHERE d.domain = ? AND d.status = 'active' AND t.status IN ('active', 'trial') LIMIT 1`)
+      .prepare(`SELECT d.tenant_id, d.domain, d.is_primary, t.name, t.slug, COALESCE(p.slug, 'free') as plan_slug FROM domains d JOIN tenants t ON t.id = d.tenant_id LEFT JOIN subscriptions s ON s.tenant_id = t.id AND s.status IN ('active', 'trialing') LEFT JOIN plans p ON p.id = s.plan_id WHERE d.domain = ? AND d.status = 'active' AND t.status IN ('active', 'trial') LIMIT 1`)
       .bind(hostname)
-      .first<{ tenant_id: string; domain: string; is_primary: number; name: string; slug: string }>();
+      .first<{ tenant_id: string; domain: string; is_primary: number; name: string; slug: string; plan_slug: string }>();
 
     if (result) {
-      tenant = { tenantId: result.tenant_id, tenantName: result.name, tenantSlug: result.slug, domain: result.domain, isPrimary: result.is_primary === 1 };
+      const isWL = result.plan_slug === 'enterprise';
+      tenant = { tenantId: result.tenant_id, tenantName: result.name, tenantSlug: result.slug, domain: result.domain, isPrimary: result.is_primary === 1, planSlug: result.plan_slug, isWhiteLabel: isWL };
     }
   }
 
@@ -123,8 +143,55 @@ async function getSiteSettings(db: D1Database, tenantId: string, tenantName: str
 }
 
 async function getTenantLocale(db: D1Database, tenantId: string): Promise<string> {
-  const t = await db.prepare('SELECT default_locale FROM tenants WHERE id = ?').bind(tenantId).first<{ default_locale: string }>();
-  return t?.default_locale ?? 'pt_BR';
+  const config = await getTenantLocaleConfig(db, tenantId);
+  return config.defaultLocale;
+}
+
+async function getTenantLocaleConfig(db: D1Database, tenantId: string): Promise<LocaleConfig> {
+  const configs = await db.prepare(
+    "SELECT config_key, config_value FROM tenant_configs WHERE tenant_id = ? AND config_key IN ('default_locale', 'enabled_locales')"
+  ).bind(tenantId).all<{ config_key: string; config_value: string }>();
+
+  let defaultLocale = 'pt';
+  let enabledLocales = ['pt'];
+
+  for (const cfg of configs.results) {
+    if (cfg.config_key === 'default_locale') defaultLocale = cfg.config_value;
+    if (cfg.config_key === 'enabled_locales') {
+      try { enabledLocales = JSON.parse(cfg.config_value); } catch { /* ignore */ }
+    }
+  }
+
+  // Fallback to old format
+  if (enabledLocales.length === 0) enabledLocales = [defaultLocale];
+
+  return { defaultLocale, enabledLocales };
+}
+
+/** Parse Accept-Language header to find best matching locale */
+function detectLocaleFromHeader(acceptLang: string | null, config: LocaleConfig): string | null {
+  if (!acceptLang) return null;
+
+  const parts = acceptLang.split(',').map((part) => {
+    const [lang, qPart] = part.trim().split(';');
+    const q = qPart ? parseFloat(qPart.replace('q=', '')) : 1.0;
+    return { lang: lang!.trim().split('-')[0]!.toLowerCase(), q };
+  }).sort((a, b) => b.q - a.q);
+
+  for (const { lang } of parts) {
+    if (config.enabledLocales.includes(lang)) return lang;
+  }
+  return null;
+}
+
+/** Check redirects table for a matching path */
+async function checkRedirect(db: D1Database, tenantId: string, path: string): Promise<{ toPath: string; statusCode: number } | null> {
+  const redirect = await db.prepare(
+    'SELECT to_path, status_code FROM redirects WHERE tenant_id = ? AND from_path = ? LIMIT 1'
+  ).bind(tenantId, path).first<{ to_path: string; status_code: number }>();
+
+  if (!redirect) return null;
+  return { toPath: redirect.to_path, statusCode: redirect.status_code };
 }
 
 async function getVideos(
@@ -396,10 +463,10 @@ function formatViews(count: number): string {
   return String(count);
 }
 
-function videoCard(v: VideoItem): string {
+function videoCard(v: VideoItem, localePrefix = ''): string {
   const dur = formatDuration(v.durationSeconds);
   const views = formatViews(v.viewCount);
-  return `<a href="/video/${esc(v.slug)}" class="group block bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all">
+  return `<a href="${localePrefix}/video/${esc(v.slug)}" class="group block bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all">
   <div class="relative aspect-video bg-gray-800">
     ${v.thumbnailUrl
       ? `<img src="${esc(v.thumbnailUrl)}" alt="${esc(v.title)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />`
@@ -414,14 +481,14 @@ function videoCard(v: VideoItem): string {
 </a>`;
 }
 
-function videoGrid(videos: VideoItem[]): string {
+function videoGrid(videos: VideoItem[], localePrefix = ''): string {
   if (videos.length === 0) {
     return `<div class="text-center py-16 text-gray-500">
       <svg class="w-16 h-16 mx-auto mb-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
       <p class="text-lg">Nenhum vídeo encontrado</p>
     </div>`;
   }
-  return `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">${videos.map(videoCard).join('')}</div>`;
+  return `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">${videos.map((v) => videoCard(v, localePrefix)).join('')}</div>`;
 }
 
 function pagination(page: number, totalPages: number, baseUrl: string): string {
@@ -471,22 +538,73 @@ function layout(
     description?: string;
     canonical?: string;
     ogImage?: string;
+    ogType?: string;
+    ogUrl?: string;
     jsonLd?: string;
     content: string;
     activePath?: string;
+    locale?: string;
+    localeConfig?: LocaleConfig;
+    domain?: string;
+    currentPath?: string;
+    hreflangPaths?: Record<string, string>;
+    tenant?: TenantInfo | null;
   },
 ): string {
   const pageTitle = opts.title === settings.siteName ? settings.siteName : `${opts.title} — ${settings.siteName}`;
   const desc = opts.description ?? `${settings.siteName} — O melhor conteúdo em vídeo`;
   const active = opts.activePath ?? '/';
+  const locale = opts.locale ?? 'pt';
+  const localeConfig = opts.localeConfig;
+  const domain = opts.domain ?? '';
+
+  // Build hreflang tags
+  let hreflangTags = '';
+  if (localeConfig && localeConfig.enabledLocales.length > 1 && domain) {
+    const paths = opts.hreflangPaths ?? {};
+    for (const loc of localeConfig.enabledLocales) {
+      const localePath = paths[loc] ?? (loc === localeConfig.defaultLocale ? (opts.currentPath ?? '/') : `/${loc}${opts.currentPath ?? '/'}`);
+      hreflangTags += `\n  <link rel="alternate" hreflang="${esc(loc)}" href="https://${esc(domain)}${esc(localePath)}">`;
+    }
+    // x-default points to default locale
+    const defaultPath = paths[localeConfig.defaultLocale] ?? (opts.currentPath ?? '/');
+    hreflangTags += `\n  <link rel="alternate" hreflang="x-default" href="https://${esc(domain)}${esc(defaultPath)}">`;
+  }
+
+  // Locale prefix for nav links
+  const lp = localeConfig && locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   const navLink = (href: string, label: string) => {
+    const fullHref = `${lp}${href}`;
     const isActive = active === href || (href !== '/' && active.startsWith(href));
-    return `<a href="${href}" class="px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive ? 'text-purple-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}">${label}</a>`;
+    return `<a href="${fullHref}" class="px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive ? 'text-purple-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}">${label}</a>`;
   };
 
+  // Locale switcher
+  let localeSwitcher = '';
+  if (localeConfig && localeConfig.enabledLocales.length > 1) {
+    const currentPath = opts.currentPath ?? '/';
+    const options = localeConfig.enabledLocales.map((loc) => {
+      const prefix = loc === localeConfig.defaultLocale ? '' : `/${loc}`;
+      const href = `${prefix}${currentPath}`;
+      return `<a href="${esc(href)}" class="block px-3 py-1.5 text-sm ${loc === locale ? 'text-purple-400 font-medium' : 'text-gray-400 hover:text-white'} hover:bg-gray-800 rounded transition-colors">${esc(LOCALE_LABELS[loc] ?? loc)}</a>`;
+    }).join('');
+
+    localeSwitcher = `<div class="relative" id="locale-switcher">
+      <button type="button" onclick="document.getElementById('locale-menu').classList.toggle('hidden')" class="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-gray-400 hover:text-white bg-gray-800/60 rounded-lg border border-gray-700/50 transition-colors">
+        <span>🌐</span><span>${esc(LOCALE_LABELS[locale] ?? locale)}</span>
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="locale-menu" class="hidden absolute right-0 top-full mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl py-1 z-50 min-w-[140px]">
+        ${options}
+      </div>
+    </div>`;
+  }
+
+  const langAttr = locale === 'zh' ? 'zh-Hans' : locale;
+
   return `<!DOCTYPE html>
-<html lang="pt-BR" class="dark">
+<html lang="${esc(langAttr)}" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -495,13 +613,17 @@ function layout(
   <meta name="robots" content="index, follow">
   ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}
   ${settings.siteFaviconUrl ? `<link rel="icon" href="${esc(settings.siteFaviconUrl)}">` : ''}
+  ${hreflangTags}
   <meta property="og:title" content="${esc(pageTitle)}">
   <meta property="og:description" content="${esc(desc)}">
-  <meta property="og:type" content="website">
+  <meta property="og:type" content="${esc(opts.ogType ?? 'website')}">
+  ${opts.ogUrl ? `<meta property="og:url" content="${esc(opts.ogUrl)}">` : (opts.canonical ? `<meta property="og:url" content="${esc(opts.canonical)}">` : '')}
   ${opts.ogImage ? `<meta property="og:image" content="${esc(opts.ogImage)}">` : ''}
+  <meta property="og:locale" content="${esc(locale)}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${esc(pageTitle)}">
   <meta name="twitter:description" content="${esc(desc)}">
+  ${opts.ogImage ? `<meta name="twitter:image" content="${esc(opts.ogImage)}">` : ''}
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -552,19 +674,20 @@ function layout(
           </nav>
         </div>
         <div class="flex items-center gap-3">
-          <form action="/search" method="GET" class="hidden sm:block">
+          <form action="${lp}/search" method="GET" class="hidden sm:block">
             <div class="relative">
               <input type="text" name="q" placeholder="Buscar vídeos..." class="w-48 lg:w-64 pl-9 pr-3 py-1.5 bg-gray-800/80 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500" />
               <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
             </div>
           </form>
+          ${localeSwitcher}
           <button id="mobile-menu-btn" class="md:hidden p-2 text-gray-400 hover:text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
         </div>
       </div>
       <div id="mobile-menu" class="md:hidden hidden pb-4">
-        <form action="/search" method="GET" class="mb-3 sm:hidden">
+        <form action="${lp}/search" method="GET" class="mb-3 sm:hidden">
           <input type="text" name="q" placeholder="Buscar vídeos..." class="w-full pl-3 pr-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
         </form>
         <nav class="flex flex-col gap-1">
@@ -586,13 +709,13 @@ function layout(
     <div class="max-w-7xl mx-auto px-4 py-8">
       <div class="flex flex-col md:flex-row items-center justify-between gap-4">
         <div class="flex flex-wrap items-center gap-4 text-sm text-gray-500">
-          <a href="/pages/about" class="hover:text-gray-300 transition-colors">Sobre</a>
-          <a href="/pages/contact" class="hover:text-gray-300 transition-colors">Contato</a>
-          <a href="/pages/terms" class="hover:text-gray-300 transition-colors">Termos</a>
-          <a href="/pages/privacy" class="hover:text-gray-300 transition-colors">Privacidade</a>
-          <a href="/pages/dmca" class="hover:text-gray-300 transition-colors">DMCA</a>
+          <a href="${lp}/pages/about" class="hover:text-gray-300 transition-colors">Sobre</a>
+          <a href="${lp}/pages/contact" class="hover:text-gray-300 transition-colors">Contato</a>
+          <a href="${lp}/pages/terms" class="hover:text-gray-300 transition-colors">Termos</a>
+          <a href="${lp}/pages/privacy" class="hover:text-gray-300 transition-colors">Privacidade</a>
+          <a href="${lp}/pages/dmca" class="hover:text-gray-300 transition-colors">DMCA</a>
         </div>
-        <p class="text-sm text-gray-600">© ${new Date().getFullYear()} ${esc(settings.siteName)}. Powered by <a href="https://framevideos.com" target="_blank" rel="noopener" class="text-purple-500 hover:text-purple-400">Frame Videos</a></p>
+        <p class="text-sm text-gray-600">© ${new Date().getFullYear()} ${esc(settings.siteName)}${opts.tenant && !opts.tenant.isWhiteLabel ? '. Powered by <a href="https://framevideos.com" target="_blank" rel="noopener" class="text-purple-500 hover:text-purple-400">Frame Videos</a>' : ''}</p>
       </div>
     </div>
   </footer>
@@ -600,6 +723,12 @@ function layout(
   <script>
     document.getElementById('mobile-menu-btn')?.addEventListener('click', function() {
       document.getElementById('mobile-menu')?.classList.toggle('hidden');
+    });
+    // Close locale menu on click outside
+    document.addEventListener('click', function(e) {
+      const sw = document.getElementById('locale-switcher');
+      const menu = document.getElementById('locale-menu');
+      if (sw && menu && !sw.contains(e.target)) menu.classList.add('hidden');
     });
   </script>
   ${settings.customBodyScripts || ''}
@@ -609,12 +738,13 @@ function layout(
 
 // ─── Page Renderers ──────────────────────────────────────────────────────────
 
-async function renderHomepage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string): Promise<string> {
+async function renderHomepage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, localeConfig: LocaleConfig): Promise<string> {
   const { videos: recentVideos } = await getVideos(db, tenant.tenantId, locale, { limit: 12 });
   const categories = await getCategories(db, tenant.tenantId, locale);
   const performers = await getPerformers(db, tenant.tenantId, locale);
   const featuredPerformers = performers.slice(0, 8);
   const topCategories = categories.filter((c) => c.videoCount > 0).slice(0, 12);
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   let content = '';
 
@@ -628,9 +758,9 @@ async function renderHomepage(db: D1Database, tenant: TenantInfo, settings: Site
   content += `<section class="mb-10">
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-xl font-semibold">Vídeos Recentes</h2>
-      <a href="/videos" class="text-sm text-purple-400 hover:text-purple-300">Ver todos →</a>
+      <a href="${lp}/videos" class="text-sm text-purple-400 hover:text-purple-300">Ver todos →</a>
     </div>
-    ${videoGrid(recentVideos)}
+    ${videoGrid(recentVideos, lp)}
   </section>`;
 
   // Categories
@@ -638,10 +768,10 @@ async function renderHomepage(db: D1Database, tenant: TenantInfo, settings: Site
     content += `<section class="mb-10">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-semibold">Categorias Populares</h2>
-        <a href="/categories" class="text-sm text-purple-400 hover:text-purple-300">Ver todas →</a>
+        <a href="${lp}/categories" class="text-sm text-purple-400 hover:text-purple-300">Ver todas →</a>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        ${topCategories.map((c) => `<a href="/category/${esc(c.slug)}" class="bg-gray-900 rounded-lg p-4 text-center hover:bg-gray-800 hover:ring-1 hover:ring-purple-500/30 transition-all">
+        ${topCategories.map((c) => `<a href="${lp}/category/${esc(c.slug)}" class="bg-gray-900 rounded-lg p-4 text-center hover:bg-gray-800 hover:ring-1 hover:ring-purple-500/30 transition-all">
           <p class="font-medium text-gray-200 text-sm">${esc(c.name)}</p>
           <p class="text-xs text-gray-500 mt-1">${c.videoCount} vídeos</p>
         </a>`).join('')}
@@ -654,10 +784,10 @@ async function renderHomepage(db: D1Database, tenant: TenantInfo, settings: Site
     content += `<section class="mb-10">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-semibold">Modelos em Destaque</h2>
-        <a href="/performers" class="text-sm text-purple-400 hover:text-purple-300">Ver todos →</a>
+        <a href="${lp}/performers" class="text-sm text-purple-400 hover:text-purple-300">Ver todos →</a>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        ${featuredPerformers.map((p) => `<a href="/performer/${esc(p.slug)}" class="bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all group">
+        ${featuredPerformers.map((p) => `<a href="${lp}/performer/${esc(p.slug)}" class="bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all group">
           <div class="aspect-square bg-gray-800 flex items-center justify-center">
             ${p.imageUrl
               ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />`
@@ -678,27 +808,34 @@ async function renderHomepage(db: D1Database, tenant: TenantInfo, settings: Site
     '@type': 'WebSite',
     name: settings.siteName,
     url: `https://${tenant.domain}`,
+    inLanguage: locale,
     potentialAction: {
       '@type': 'SearchAction',
-      target: `https://${tenant.domain}/videos?search={search_term_string}`,
+      target: `https://${tenant.domain}${lp}/videos?search={search_term_string}`,
       'query-input': 'required name=search_term_string',
     },
   });
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: settings.siteName,
     description: `${settings.siteName} — Os melhores vídeos, atualizados diariamente`,
-    canonical: `https://${tenant.domain}/`,
+    canonical: `https://${tenant.domain}${lp}/`,
+    ogUrl: `https://${tenant.domain}${lp}/`,
     content,
     activePath: '/',
     jsonLd,
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: '/',
   });
 }
 
-async function renderVideosPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, url: URL): Promise<string> {
+async function renderVideosPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, url: URL, localeConfig: LocaleConfig): Promise<string> {
   const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const search = url.searchParams.get('search') ?? undefined;
   const offset = (page - 1) * VIDEOS_PER_PAGE;
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   const { videos, total } = await getVideos(db, tenant.tenantId, locale, { limit: VIDEOS_PER_PAGE, offset, search });
   const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
@@ -708,19 +845,23 @@ async function renderVideosPage(db: D1Database, tenant: TenantInfo, settings: Si
     <p class="text-gray-500 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''} encontrado${total !== 1 ? 's' : ''}</p>
   </div>`;
 
-  content += videoGrid(videos);
-  content += pagination(page, totalPages, search ? `/videos?search=${encodeURIComponent(search)}` : '/videos');
+  content += videoGrid(videos, lp);
+  content += pagination(page, totalPages, search ? `${lp}/videos?search=${encodeURIComponent(search)}` : `${lp}/videos`);
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: search ? `Busca: ${search}` : 'Vídeos',
     description: search ? `Resultados da busca por "${search}"` : `Todos os vídeos de ${settings.siteName}`,
-    canonical: `https://${tenant.domain}/videos`,
+    canonical: `https://${tenant.domain}${lp}/videos`,
     content,
     activePath: '/videos',
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: '/videos',
   });
 }
 
-async function renderVideoPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string): Promise<string | null> {
+async function renderVideoPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, localeConfig: LocaleConfig): Promise<string | null> {
   const video = await getVideoBySlug(db, tenant.tenantId, locale, slug);
   if (!video) return null;
 
@@ -729,6 +870,7 @@ async function renderVideoPage(db: D1Database, tenant: TenantInfo, settings: Sit
 
   const dur = formatDuration(video.duration_seconds);
   const views = formatViews(video.view_count);
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   // Player — improved with responsive container and better embed handling
   let playerHtml = '';
@@ -756,7 +898,7 @@ async function renderVideoPage(db: D1Database, tenant: TenantInfo, settings: Sit
       ${playerHtml}
       <h1 class="text-xl md:text-2xl font-bold mb-2">${esc(video.title)}</h1>
       <div class="flex flex-wrap items-center gap-3 text-sm text-gray-400 mb-4">
-        ${video.channel ? `<a href="/channel/${esc(video.channel.slug)}" class="hover:text-purple-400">${esc(video.channel.name)}</a><span>•</span>` : ''}
+        ${video.channel ? `<a href="${lp}/channel/${esc(video.channel.slug)}" class="hover:text-purple-400">${esc(video.channel.name)}</a><span>•</span>` : ''}
         <span>${views} visualizações</span>
         ${dur ? `<span>•</span><span>${dur}</span>` : ''}
         ${video.published_at ? `<span>•</span><span>${new Date(video.published_at).toLocaleDateString('pt-BR')}</span>` : ''}
@@ -769,7 +911,7 @@ async function renderVideoPage(db: D1Database, tenant: TenantInfo, settings: Sit
       ${video.performers.length > 0 ? `<div class="mb-4">
         <h3 class="text-sm font-medium text-gray-400 mb-2">Modelos</h3>
         <div class="flex flex-wrap gap-2">
-          ${video.performers.map((p) => `<a href="/performer/${esc(p.slug)}" class="flex items-center gap-2 bg-gray-900 rounded-full px-3 py-1.5 text-sm hover:bg-gray-800 transition-colors">
+          ${video.performers.map((p) => `<a href="${lp}/performer/${esc(p.slug)}" class="flex items-center gap-2 bg-gray-900 rounded-full px-3 py-1.5 text-sm hover:bg-gray-800 transition-colors">
             ${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" class="w-6 h-6 rounded-full object-cover" />` : ''}
             <span>${esc(p.name)}</span>
           </a>`).join('')}
@@ -779,14 +921,14 @@ async function renderVideoPage(db: D1Database, tenant: TenantInfo, settings: Sit
       ${video.categories.length > 0 ? `<div class="mb-4">
         <h3 class="text-sm font-medium text-gray-400 mb-2">Categorias</h3>
         <div class="flex flex-wrap gap-2">
-          ${video.categories.map((c) => `<a href="/category/${esc(c.slug)}" class="bg-purple-900/30 text-purple-300 text-xs px-3 py-1 rounded-full hover:bg-purple-900/50 transition-colors">${esc(c.name)}</a>`).join('')}
+          ${video.categories.map((c) => `<a href="${lp}/category/${esc(c.slug)}" class="bg-purple-900/30 text-purple-300 text-xs px-3 py-1 rounded-full hover:bg-purple-900/50 transition-colors">${esc(c.name)}</a>`).join('')}
         </div>
       </div>` : ''}
 
       ${video.tags.length > 0 ? `<div class="mb-4">
         <h3 class="text-sm font-medium text-gray-400 mb-2">Tags</h3>
         <div class="flex flex-wrap gap-2">
-          ${video.tags.map((t) => `<a href="/tag/${esc(t.slug)}" class="bg-gray-800 text-gray-400 text-xs px-2.5 py-1 rounded hover:bg-gray-700 hover:text-gray-200 transition-colors">#${esc(t.name)}</a>`).join('')}
+          ${video.tags.map((t) => `<a href="${lp}/tag/${esc(t.slug)}" class="bg-gray-800 text-gray-400 text-xs px-2.5 py-1 rounded hover:bg-gray-700 hover:text-gray-200 transition-colors">#${esc(t.name)}</a>`).join('')}
         </div>
       </div>` : ''}
     </div>
@@ -794,7 +936,7 @@ async function renderVideoPage(db: D1Database, tenant: TenantInfo, settings: Sit
     <div>
       <h2 class="text-lg font-semibold mb-4">Vídeos Relacionados</h2>
       <div class="flex flex-col gap-3">
-        ${video.related.map((r) => `<a href="/video/${esc(r.slug)}" class="flex gap-3 group">
+        ${video.related.map((r) => `<a href="${lp}/video/${esc(r.slug)}" class="flex gap-3 group">
           <div class="relative w-40 shrink-0 aspect-video bg-gray-800 rounded overflow-hidden">
             ${r.thumbnailUrl ? `<img src="${esc(r.thumbnailUrl)}" alt="${esc(r.title)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />` : ''}
             ${r.durationSeconds ? `<span class="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 py-0.5 rounded font-mono">${formatDuration(r.durationSeconds)}</span>` : ''}
@@ -810,14 +952,20 @@ async function renderVideoPage(db: D1Database, tenant: TenantInfo, settings: Sit
     </div>
   </div>`;
 
+  const seoTitle = video.seo_title || video.title;
+  const seoDesc = video.seo_description || video.description || video.title;
+
   const jsonLd = JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'VideoObject',
     name: video.title,
     description: video.description || video.title,
-    thumbnailUrl: video.thumbnail_url,
+    thumbnailUrl: video.thumbnail_url ? [video.thumbnail_url] : undefined,
     uploadDate: video.published_at || video.created_at,
-    duration: video.duration_seconds ? `PT${Math.floor(video.duration_seconds / 60)}M${video.duration_seconds % 60}S` : undefined,
+    duration: video.duration_seconds ? `PT${Math.floor(video.duration_seconds / 3600)}H${Math.floor((video.duration_seconds % 3600) / 60)}M${video.duration_seconds % 60}S` : undefined,
+    contentUrl: video.video_url || undefined,
+    embedUrl: video.embed_url || undefined,
+    inLanguage: locale,
     interactionStatistic: {
       '@type': 'InteractionCounter',
       interactionType: 'https://schema.org/WatchAction',
@@ -825,19 +973,26 @@ async function renderVideoPage(db: D1Database, tenant: TenantInfo, settings: Sit
     },
   });
 
-  return layout(settings, {
-    title: video.title,
-    description: video.description || video.title,
-    canonical: `https://${tenant.domain}/video/${slug}`,
+  return layout(settings, { tenant,
+    title: seoTitle,
+    description: seoDesc,
+    canonical: `https://${tenant.domain}${lp}/video/${slug}`,
+    ogType: 'video.other',
+    ogUrl: `https://${tenant.domain}${lp}/video/${slug}`,
     ogImage: video.thumbnail_url ?? undefined,
     content,
     activePath: '/videos',
     jsonLd,
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: `/video/${slug}`,
   });
 }
 
-async function renderCategoriesPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string): Promise<string> {
+async function renderCategoriesPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, localeConfig: LocaleConfig): Promise<string> {
   const categories = await getCategories(db, tenant.tenantId, locale);
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   let content = `<h1 class="text-2xl font-bold mb-6">Categorias</h1>`;
 
@@ -845,7 +1000,7 @@ async function renderCategoriesPage(db: D1Database, tenant: TenantInfo, settings
     content += `<p class="text-gray-500 text-center py-16">Nenhuma categoria disponível</p>`;
   } else {
     content += `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-      ${categories.map((c) => `<a href="/category/${esc(c.slug)}" class="bg-gray-900 rounded-lg p-5 text-center hover:bg-gray-800 hover:ring-1 hover:ring-purple-500/30 transition-all group">
+      ${categories.map((c) => `<a href="${lp}/category/${esc(c.slug)}" class="bg-gray-900 rounded-lg p-5 text-center hover:bg-gray-800 hover:ring-1 hover:ring-purple-500/30 transition-all group">
         <p class="font-medium text-gray-200 group-hover:text-purple-400 transition-colors">${esc(c.name)}</p>
         <p class="text-sm text-gray-500 mt-1">${c.videoCount} vídeo${c.videoCount !== 1 ? 's' : ''}</p>
         ${c.description ? `<p class="text-xs text-gray-600 mt-2 line-clamp-2">${esc(c.description)}</p>` : ''}
@@ -853,44 +1008,66 @@ async function renderCategoriesPage(db: D1Database, tenant: TenantInfo, settings
     </div>`;
   }
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: 'Categorias',
     description: `Categorias de vídeos em ${settings.siteName}`,
-    canonical: `https://${tenant.domain}/categories`,
+    canonical: `https://${tenant.domain}${lp}/categories`,
     content,
     activePath: '/categories',
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: '/categories',
   });
 }
 
-async function renderCategoryPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, url: URL): Promise<string | null> {
+async function renderCategoryPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, url: URL, localeConfig: LocaleConfig): Promise<string | null> {
   const category = await getCategoryBySlug(db, tenant.tenantId, locale, slug);
   if (!category) return null;
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const offset = (page - 1) * VIDEOS_PER_PAGE;
   const { videos, total } = await getVideos(db, tenant.tenantId, locale, { limit: VIDEOS_PER_PAGE, offset, categorySlug: slug });
   const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
 
+  // BreadcrumbList JSON-LD
+  const breadcrumbLd = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: settings.siteName, item: `https://${tenant.domain}${lp}/` },
+      { '@type': 'ListItem', position: 2, name: 'Categorias', item: `https://${tenant.domain}${lp}/categories` },
+      { '@type': 'ListItem', position: 3, name: category.name, item: `https://${tenant.domain}${lp}/category/${slug}` },
+    ],
+  });
+
   let content = `<div class="mb-6">
-    <nav class="text-sm text-gray-500 mb-2"><a href="/categories" class="hover:text-gray-300">Categorias</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(category.name)}</span></nav>
+    <nav class="text-sm text-gray-500 mb-2"><a href="${lp}/categories" class="hover:text-gray-300">Categorias</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(category.name)}</span></nav>
     <h1 class="text-2xl font-bold">${esc(category.name)}</h1>
     ${category.description ? `<p class="text-gray-400 text-sm mt-1">${esc(category.description)}</p>` : ''}
     <p class="text-gray-500 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''}</p>
   </div>`;
-  content += videoGrid(videos);
-  content += pagination(page, totalPages, `/category/${slug}`);
+  content += videoGrid(videos, lp);
+  content += pagination(page, totalPages, `${lp}/category/${slug}`);
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: category.name,
     description: category.description || `Vídeos da categoria ${category.name}`,
-    canonical: `https://${tenant.domain}/category/${slug}`,
+    canonical: `https://${tenant.domain}${lp}/category/${slug}`,
     content,
     activePath: '/categories',
+    jsonLd: breadcrumbLd,
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: `/category/${slug}`,
   });
 }
 
-async function renderPerformersPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string): Promise<string> {
+async function renderPerformersPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, localeConfig: LocaleConfig): Promise<string> {
   const performers = await getPerformers(db, tenant.tenantId, locale);
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   let content = `<h1 class="text-2xl font-bold mb-6">Modelos</h1>`;
 
@@ -898,7 +1075,7 @@ async function renderPerformersPage(db: D1Database, tenant: TenantInfo, settings
     content += `<p class="text-gray-500 text-center py-16">Nenhum modelo disponível</p>`;
   } else {
     content += `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-      ${performers.map((p) => `<a href="/performer/${esc(p.slug)}" class="bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all group">
+      ${performers.map((p) => `<a href="${lp}/performer/${esc(p.slug)}" class="bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all group">
         <div class="aspect-square bg-gray-800 flex items-center justify-center">
           ${p.imageUrl
             ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />`
@@ -913,18 +1090,23 @@ async function renderPerformersPage(db: D1Database, tenant: TenantInfo, settings
     </div>`;
   }
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: 'Modelos',
     description: `Modelos e performers em ${settings.siteName}`,
-    canonical: `https://${tenant.domain}/performers`,
+    canonical: `https://${tenant.domain}${lp}/performers`,
     content,
     activePath: '/performers',
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: '/performers',
   });
 }
 
-async function renderPerformerPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, url: URL): Promise<string | null> {
+async function renderPerformerPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, url: URL, localeConfig: LocaleConfig): Promise<string | null> {
   const performer = await getPerformerBySlug(db, tenant.tenantId, locale, slug);
   if (!performer) return null;
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const offset = (page - 1) * VIDEOS_PER_PAGE;
@@ -932,7 +1114,7 @@ async function renderPerformerPage(db: D1Database, tenant: TenantInfo, settings:
   const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
 
   let content = `<div class="mb-6">
-    <nav class="text-sm text-gray-500 mb-2"><a href="/performers" class="hover:text-gray-300">Modelos</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(performer.name)}</span></nav>
+    <nav class="text-sm text-gray-500 mb-2"><a href="${lp}/performers" class="hover:text-gray-300">Modelos</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(performer.name)}</span></nav>
     <div class="flex items-start gap-4">
       ${performer.imageUrl ? `<img src="${esc(performer.imageUrl)}" alt="${esc(performer.name)}" class="w-20 h-20 rounded-full object-cover shrink-0" />` : ''}
       <div>
@@ -942,21 +1124,26 @@ async function renderPerformerPage(db: D1Database, tenant: TenantInfo, settings:
       </div>
     </div>
   </div>`;
-  content += videoGrid(videos);
-  content += pagination(page, totalPages, `/performer/${slug}`);
+  content += videoGrid(videos, lp);
+  content += pagination(page, totalPages, `${lp}/performer/${slug}`);
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: performer.name,
     description: performer.bio || `Vídeos de ${performer.name}`,
-    canonical: `https://${tenant.domain}/performer/${slug}`,
+    canonical: `https://${tenant.domain}${lp}/performer/${slug}`,
     ogImage: performer.imageUrl ?? undefined,
     content,
     activePath: '/performers',
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: `/performer/${slug}`,
   });
 }
 
-async function renderTagsPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string): Promise<string> {
+async function renderTagsPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, localeConfig: LocaleConfig): Promise<string> {
   const tags = await getTags(db, tenant.tenantId, locale);
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   let content = `<h1 class="text-2xl font-bold mb-6">Tags</h1>`;
 
@@ -964,25 +1151,30 @@ async function renderTagsPage(db: D1Database, tenant: TenantInfo, settings: Site
     content += `<p class="text-gray-500 text-center py-16">Nenhuma tag disponível</p>`;
   } else {
     content += `<div class="flex flex-wrap gap-2">
-      ${tags.map((t) => `<a href="/tag/${esc(t.slug)}" class="bg-gray-900 px-4 py-2 rounded-lg text-sm hover:bg-gray-800 hover:text-purple-400 transition-colors">
+      ${tags.map((t) => `<a href="${lp}/tag/${esc(t.slug)}" class="bg-gray-900 px-4 py-2 rounded-lg text-sm hover:bg-gray-800 hover:text-purple-400 transition-colors">
         <span class="text-gray-400">#</span>${esc(t.name)}
         <span class="text-xs text-gray-600 ml-1">(${t.videoCount})</span>
       </a>`).join('')}
     </div>`;
   }
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: 'Tags',
     description: `Tags de vídeos em ${settings.siteName}`,
-    canonical: `https://${tenant.domain}/tags`,
+    canonical: `https://${tenant.domain}${lp}/tags`,
     content,
     activePath: '/tags',
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: '/tags',
   });
 }
 
-async function renderTagPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, url: URL): Promise<string | null> {
+async function renderTagPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, url: URL, localeConfig: LocaleConfig): Promise<string | null> {
   const tag = await getTagBySlug(db, tenant.tenantId, locale, slug);
   if (!tag) return null;
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const offset = (page - 1) * VIDEOS_PER_PAGE;
@@ -990,24 +1182,29 @@ async function renderTagPage(db: D1Database, tenant: TenantInfo, settings: SiteS
   const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
 
   let content = `<div class="mb-6">
-    <nav class="text-sm text-gray-500 mb-2"><a href="/tags" class="hover:text-gray-300">Tags</a> <span class="mx-1">›</span> <span class="text-gray-300">#${esc(tag.name)}</span></nav>
+    <nav class="text-sm text-gray-500 mb-2"><a href="${lp}/tags" class="hover:text-gray-300">Tags</a> <span class="mx-1">›</span> <span class="text-gray-300">#${esc(tag.name)}</span></nav>
     <h1 class="text-2xl font-bold">#${esc(tag.name)}</h1>
     <p class="text-gray-500 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''}</p>
   </div>`;
-  content += videoGrid(videos);
-  content += pagination(page, totalPages, `/tag/${slug}`);
+  content += videoGrid(videos, lp);
+  content += pagination(page, totalPages, `${lp}/tag/${slug}`);
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: `#${tag.name}`,
     description: `Vídeos com a tag ${tag.name}`,
-    canonical: `https://${tenant.domain}/tag/${slug}`,
+    canonical: `https://${tenant.domain}${lp}/tag/${slug}`,
     content,
     activePath: '/tags',
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: `/tag/${slug}`,
   });
 }
 
-async function renderChannelsPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string): Promise<string> {
+async function renderChannelsPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, localeConfig: LocaleConfig): Promise<string> {
   const channels = await getChannels(db, tenant.tenantId, locale);
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   let content = `<h1 class="text-2xl font-bold mb-6">Canais</h1>`;
 
@@ -1015,7 +1212,7 @@ async function renderChannelsPage(db: D1Database, tenant: TenantInfo, settings: 
     content += `<p class="text-gray-500 text-center py-16">Nenhum canal disponível</p>`;
   } else {
     content += `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-      ${channels.map((ch) => `<a href="/channel/${esc(ch.slug)}" class="bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all group">
+      ${channels.map((ch) => `<a href="${lp}/channel/${esc(ch.slug)}" class="bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all group">
         <div class="aspect-video bg-gray-800 flex items-center justify-center">
           ${ch.logoUrl
             ? `<img src="${esc(ch.logoUrl)}" alt="${esc(ch.name)}" loading="lazy" class="w-full h-full object-contain p-4 group-hover:scale-105 transition-transform duration-300" />`
@@ -1030,18 +1227,23 @@ async function renderChannelsPage(db: D1Database, tenant: TenantInfo, settings: 
     </div>`;
   }
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: 'Canais',
     description: `Canais de vídeos em ${settings.siteName}`,
-    canonical: `https://${tenant.domain}/channels`,
+    canonical: `https://${tenant.domain}${lp}/channels`,
     content,
     activePath: '/channels',
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: '/channels',
   });
 }
 
-async function renderChannelPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, url: URL): Promise<string | null> {
+async function renderChannelPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, url: URL, localeConfig: LocaleConfig): Promise<string | null> {
   const channel = await getChannelBySlug(db, tenant.tenantId, locale, slug);
   if (!channel) return null;
+  const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
 
   const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const offset = (page - 1) * VIDEOS_PER_PAGE;
@@ -1049,7 +1251,7 @@ async function renderChannelPage(db: D1Database, tenant: TenantInfo, settings: S
   const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
 
   let content = `<div class="mb-6">
-    <nav class="text-sm text-gray-500 mb-2"><a href="/channels" class="hover:text-gray-300">Canais</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(channel.name)}</span></nav>
+    <nav class="text-sm text-gray-500 mb-2"><a href="${lp}/channels" class="hover:text-gray-300">Canais</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(channel.name)}</span></nav>
     <div class="flex items-start gap-4">
       ${channel.logoUrl ? `<img src="${esc(channel.logoUrl)}" alt="${esc(channel.name)}" class="w-16 h-16 rounded-lg object-contain bg-gray-800 p-2 shrink-0" />` : ''}
       <div>
@@ -1059,19 +1261,23 @@ async function renderChannelPage(db: D1Database, tenant: TenantInfo, settings: S
       </div>
     </div>
   </div>`;
-  content += videoGrid(videos);
-  content += pagination(page, totalPages, `/channel/${slug}`);
+  content += videoGrid(videos, lp);
+  content += pagination(page, totalPages, `${lp}/channel/${slug}`);
 
   return layout(settings, {
     title: channel.name,
     description: channel.description || `Vídeos do canal ${channel.name}`,
-    canonical: `https://${tenant.domain}/channel/${slug}`,
+    canonical: `https://${tenant.domain}${lp}/channel/${slug}`,
     content,
     activePath: '/channels',
+    locale,
+    localeConfig,
+    domain: tenant.domain,
+    currentPath: `/channel/${slug}`,
   });
 }
 
-async function renderStaticPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string): Promise<string | null> {
+async function renderStaticPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, localeConfig: LocaleConfig): Promise<string | null> {
   const page = await getPage(db, tenant.tenantId, locale, slug);
   if (!page) return null;
 
@@ -1092,7 +1298,7 @@ async function renderStaticPage(db: D1Database, tenant: TenantInfo, settings: Si
     <div class="prose prose-invert max-w-none">${html}</div>
   </article>`;
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: page.title,
     description: page.content.slice(0, 160),
     canonical: `https://${tenant.domain}/pages/${slug}`,
@@ -1155,7 +1361,7 @@ async function renderSearchPage(db: D1Database, tenant: TenantInfo, settings: Si
     }
   }
 
-  return layout(settings, {
+  return layout(settings, { tenant,
     title: query ? `Busca: ${query}` : 'Buscar',
     description: query ? `Resultados da busca por "${query}"` : `Buscar vídeos em ${settings.siteName}`,
     canonical: `https://${tenant.domain}/search`,
@@ -1184,7 +1390,7 @@ function render404Page(settings: SiteSettings | null, tenant: TenantInfo | null)
     </a>
   </div>`;
 
-  return layout(settings, { title: 'Página não encontrada', content });
+  return layout(settings, { tenant, title: 'Página não encontrada', content });
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────

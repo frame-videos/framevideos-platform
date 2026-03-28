@@ -27,13 +27,43 @@ function encodeCursor(id: string): string {
   return btoa(id);
 }
 
-async function getTenantLocale(db: D1Client, tenantId: string): Promise<string> {
+async function getTenantLocaleConfig(db: D1Client, tenantId: string): Promise<{ defaultLocale: string; enabledLocales: string[] }> {
   const tenant = await db.queryOne<{ default_locale: string }>(
     'SELECT default_locale FROM tenants WHERE id = ? AND status IN (\'active\', \'trial\')',
     [tenantId],
   );
   if (!tenant) throw new NotFoundError('Tenant', tenantId);
-  return tenant.default_locale ?? 'pt_BR';
+
+  const configs = await db.query<{ config_key: string; config_value: string }>(
+    "SELECT config_key, config_value FROM tenant_configs WHERE tenant_id = ? AND config_key IN ('default_locale', 'enabled_locales')",
+    [tenantId],
+  );
+
+  let defaultLocale = tenant.default_locale ?? 'pt';
+  let enabledLocales = ['pt'];
+
+  for (const cfg of configs) {
+    if (cfg.config_key === 'default_locale') defaultLocale = cfg.config_value;
+    if (cfg.config_key === 'enabled_locales') {
+      try { enabledLocales = JSON.parse(cfg.config_value); } catch { /* ignore */ }
+    }
+  }
+
+  return { defaultLocale, enabledLocales };
+}
+
+async function getTenantLocale(db: D1Client, tenantId: string): Promise<string> {
+  const { defaultLocale } = await getTenantLocaleConfig(db, tenantId);
+  return defaultLocale;
+}
+
+/** Resolve locale from query param with fallback to tenant default */
+function resolveLocale(c: { req: { query: (k: string) => string | undefined } }, config: { defaultLocale: string; enabledLocales: string[] }): string {
+  const requested = c.req.query('locale');
+  if (requested && config.enabledLocales.includes(requested)) {
+    return requested;
+  }
+  return config.defaultLocale;
 }
 
 // ─── GET /public/:tenantId/videos — supports offset + cursor pagination ──────
@@ -41,7 +71,8 @@ async function getTenantLocale(db: D1Client, tenantId: string): Promise<string> 
 publicRoutes.get('/:tenantId/videos', async (c) => {
   const tenantId = c.req.param('tenantId');
   const db = new D1Client(c.env.DB);
-  const locale = await getTenantLocale(db, tenantId);
+  const localeConfig = await getTenantLocaleConfig(db, tenantId);
+  const locale = resolveLocale(c, localeConfig);
   const { page, limit, offset } = paginationParams(c);
 
   const cursorParam = c.req.query('cursor');
@@ -162,7 +193,8 @@ publicRoutes.get('/:tenantId/video/:slug', async (c) => {
   const tenantId = c.req.param('tenantId');
   const slug = c.req.param('slug');
   const db = new D1Client(c.env.DB);
-  const locale = await getTenantLocale(db, tenantId);
+  const localeConfig = await getTenantLocaleConfig(db, tenantId);
+  const locale = resolveLocale(c, localeConfig);
 
   const video = await db.queryOne<{
     id: string; slug: string; duration_seconds: number | null;
@@ -305,7 +337,8 @@ publicRoutes.get('/:tenantId/video/:slug', async (c) => {
 publicRoutes.get('/:tenantId/categories', async (c) => {
   const tenantId = c.req.param('tenantId');
   const db = new D1Client(c.env.DB);
-  const locale = await getTenantLocale(db, tenantId);
+  const localeConfig = await getTenantLocaleConfig(db, tenantId);
+  const locale = resolveLocale(c, localeConfig);
 
   const categories = await db.query<{
     id: string; slug: string; sort_order: number;
@@ -338,7 +371,8 @@ publicRoutes.get('/:tenantId/categories', async (c) => {
 publicRoutes.get('/:tenantId/performers', async (c) => {
   const tenantId = c.req.param('tenantId');
   const db = new D1Client(c.env.DB);
-  const locale = await getTenantLocale(db, tenantId);
+  const localeConfig = await getTenantLocaleConfig(db, tenantId);
+  const locale = resolveLocale(c, localeConfig);
 
   const performers = await db.query<{
     slug: string; image_url: string | null;
@@ -372,7 +406,8 @@ publicRoutes.get('/:tenantId/performers', async (c) => {
 publicRoutes.get('/:tenantId/channels', async (c) => {
   const tenantId = c.req.param('tenantId');
   const db = new D1Client(c.env.DB);
-  const locale = await getTenantLocale(db, tenantId);
+  const localeConfig = await getTenantLocaleConfig(db, tenantId);
+  const locale = resolveLocale(c, localeConfig);
 
   const channels = await db.query<{
     slug: string; logo_url: string | null;
@@ -406,7 +441,8 @@ publicRoutes.get('/:tenantId/channels', async (c) => {
 publicRoutes.get('/:tenantId/tags', async (c) => {
   const tenantId = c.req.param('tenantId');
   const db = new D1Client(c.env.DB);
-  const locale = await getTenantLocale(db, tenantId);
+  const localeConfig = await getTenantLocaleConfig(db, tenantId);
+  const locale = resolveLocale(c, localeConfig);
 
   const tags = await db.query<{
     slug: string; name: string | null; video_count: number;
@@ -437,7 +473,8 @@ publicRoutes.get('/:tenantId/pages/:slug', async (c) => {
   const tenantId = c.req.param('tenantId');
   const slug = c.req.param('slug');
   const db = new D1Client(c.env.DB);
-  const locale = await getTenantLocale(db, tenantId);
+  const localeConfig = await getTenantLocaleConfig(db, tenantId);
+  const locale = resolveLocale(c, localeConfig);
 
   const page = await db.queryOne<{
     slug: string; title: string | null; content: string | null;
@@ -484,6 +521,13 @@ publicRoutes.get('/:tenantId/settings', async (c) => {
     settings[cfg.config_key] = cfg.config_value;
   }
 
+  let enabledLocales: string[] = ['pt'];
+  let defaultLocale = 'pt';
+  try {
+    if (settings['enabled_locales']) enabledLocales = JSON.parse(settings['enabled_locales']);
+  } catch { /* ignore */ }
+  if (settings['default_locale']) defaultLocale = settings['default_locale'];
+
   return c.json({
     tenantName: tenant.name,
     tenantSlug: tenant.slug,
@@ -496,6 +540,8 @@ publicRoutes.get('/:tenantId/settings', async (c) => {
     customCss: settings['custom_css'] ?? '',
     customHeadScripts: settings['custom_head_scripts'] ?? '',
     customBodyScripts: settings['custom_body_scripts'] ?? '',
+    enabledLocales,
+    defaultLocale,
   });
 });
 
