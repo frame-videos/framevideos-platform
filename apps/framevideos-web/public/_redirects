@@ -1,5 +1,3 @@
-# Redirect pages.dev para domínio principal
-https://framevideos-web.pages.dev/* https://framevideos.com/:splat 301
-
-# SPA fallback — serve index.html for all routes
-/* /index.html 200
+# SPA fallback for dashboard and admin routes
+/dashboard/*  /dashboard/index.html  200
+/admin/*      /admin/index.html      200
