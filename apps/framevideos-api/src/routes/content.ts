@@ -15,6 +15,16 @@ import {
   ForbiddenError,
 } from '@frame-videos/shared/errors';
 import { SYSTEM_LIMITS } from '@frame-videos/shared/constants';
+import {
+  QueryBuilder,
+  parseOffsetPagination,
+  decodeCursor as decodeCursorOpt,
+  encodeCursor as encodeCursorOpt,
+  buildOffsetPagination,
+  buildCursorPagination,
+  countQuery,
+  resolveSort,
+} from '../utils/query-optimizer.js';
 
 const content = new Hono<AppContext>();
 
@@ -226,82 +236,52 @@ const createVideoSchema = z.object({
 const updateVideoSchema = createVideoSchema.partial();
 
 // GET /content/videos — supports offset + cursor-based pagination, advanced filters, sorting
+// Refactored with QueryBuilder (Sprint 10, Task 5)
 content.get('/videos', async (c) => {
   const tenantId = c.get('tenantId')!;
   const db = new D1Client(c.env.DB);
-  const { page, limit, offset } = paginationParams(c);
+  const { page, limit, offset } = parseOffsetPagination({
+    page: c.req.query('page'),
+    limit: c.req.query('limit'),
+  });
 
   // Cursor-based pagination (takes priority if provided)
   const cursorParam = c.req.query('cursor');
-  const cursorId = decodeCursor(cursorParam);
+  const cursorId = decodeCursorOpt(cursorParam);
   const useCursor = Boolean(cursorParam);
-
-  // Filters
-  const status = c.req.query('status');
-  const search = c.req.query('search');
-  const categoryId = c.req.query('category_id');
-  const tagId = c.req.query('tag_id');
-  const performerId = c.req.query('performer_id');
-  const channelId = c.req.query('channel_id');
-  const dateFrom = c.req.query('date_from');
-  const dateTo = c.req.query('date_to');
-
-  // Sorting
   const sort = c.req.query('sort') ?? 'newest';
 
-  let where = 'v.tenant_id = ?';
-  const params: unknown[] = [tenantId];
+  // Build filters with QueryBuilder
+  const qb = new QueryBuilder();
+  qb.where('v.tenant_id', tenantId);
+  qb.whereIf('v.status', c.req.query('status'));
+  qb.whereLike('vt.title', c.req.query('search'));
+  qb.whereExists(
+    'SELECT 1 FROM video_categories vc WHERE vc.video_id = v.id AND vc.category_id = ?',
+    c.req.query('category_id'),
+  );
+  qb.whereExists(
+    'SELECT 1 FROM video_tags vtg WHERE vtg.video_id = v.id AND vtg.tag_id = ?',
+    c.req.query('tag_id'),
+  );
+  qb.whereExists(
+    'SELECT 1 FROM video_performers vp WHERE vp.video_id = v.id AND vp.performer_id = ?',
+    c.req.query('performer_id'),
+  );
+  qb.whereExists(
+    'SELECT 1 FROM video_channels vch WHERE vch.video_id = v.id AND vch.channel_id = ?',
+    c.req.query('channel_id'),
+  );
+  qb.whereDateRange('v.created_at', c.req.query('date_from'), c.req.query('date_to'));
 
-  if (status) {
-    where += ' AND v.status = ?';
-    params.push(status);
-  }
+  // Build base filter (without cursor, for count)
+  const baseFilter = qb.build();
 
-  if (search) {
-    where += ' AND vt.title LIKE ?';
-    params.push(`%${search}%`);
-  }
-
-  if (categoryId) {
-    where += ' AND EXISTS (SELECT 1 FROM video_categories vc WHERE vc.video_id = v.id AND vc.category_id = ?)';
-    params.push(categoryId);
-  }
-
-  if (tagId) {
-    where += ' AND EXISTS (SELECT 1 FROM video_tags vtg WHERE vtg.video_id = v.id AND vtg.tag_id = ?)';
-    params.push(tagId);
-  }
-
-  if (performerId) {
-    where += ' AND EXISTS (SELECT 1 FROM video_performers vp WHERE vp.video_id = v.id AND vp.performer_id = ?)';
-    params.push(performerId);
-  }
-
-  if (channelId) {
-    where += ' AND EXISTS (SELECT 1 FROM video_channels vch WHERE vch.video_id = v.id AND vch.channel_id = ?)';
-    params.push(channelId);
-  }
-
-  if (dateFrom) {
-    where += ' AND v.created_at >= ?';
-    params.push(dateFrom);
-  }
-
-  if (dateTo) {
-    where += ' AND v.created_at <= ?';
-    params.push(dateTo);
-  }
-
-  // Cursor filter (ULID is lexicographically sortable)
+  // Add cursor filter for data query
   if (useCursor && cursorId) {
-    if (sort === 'oldest') {
-      where += ' AND v.id > ?';
-    } else {
-      // For newest (default), views, title — use id < cursor for next page
-      where += ' AND v.id < ?';
-    }
-    params.push(cursorId);
+    qb.whereCursor('v.id', cursorId, sort === 'oldest' ? 'asc' : 'desc');
   }
+  const dataFilter = qb.build();
 
   const tenant = await db.queryOne<{ default_locale: string }>(
     'SELECT default_locale FROM tenants WHERE id = ?',
@@ -309,25 +289,22 @@ content.get('/videos', async (c) => {
   );
   const locale = tenant?.default_locale ?? 'pt_BR';
 
-  // Count total (without cursor filter for accurate total)
-  const countWhere = where.replace(/ AND v\.id [<>] \?$/, '');
-  const countParams = useCursor && cursorId ? params.slice(0, -1) : [...params];
-  const countResult = await db.queryOne<{ total: number }>(
-    `SELECT COUNT(*) as total FROM videos v
-     LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?
-     WHERE ${countWhere}`,
-    [locale, ...countParams],
+  // Count total (without cursor for accurate total)
+  const total = await countQuery(
+    db,
+    'videos v',
+    baseFilter.where,
+    [locale, ...baseFilter.params],
+    'LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?',
   );
-  const total = countResult?.total ?? 0;
 
-  // Order clause
-  let orderBy = 'v.created_at DESC, v.id DESC';
-  switch (sort) {
-    case 'oldest': orderBy = 'v.created_at ASC, v.id ASC'; break;
-    case 'views': orderBy = 'v.view_count DESC, v.id DESC'; break;
-    case 'title': orderBy = 'vt.title ASC, v.id ASC'; break;
-    default: orderBy = 'v.created_at DESC, v.id DESC';
-  }
+  // Resolve sort order
+  const orderBy = resolveSort(sort, [
+    { key: 'newest', sql: 'v.created_at DESC, v.id DESC' },
+    { key: 'oldest', sql: 'v.created_at ASC, v.id ASC' },
+    { key: 'views', sql: 'v.view_count DESC, v.id DESC' },
+    { key: 'title', sql: 'vt.title ASC, v.id ASC' },
+  ], 'v.created_at DESC, v.id DESC');
 
   const videos = await db.query<{
     id: string;
@@ -350,10 +327,10 @@ content.get('/videos', async (c) => {
             vt.title, vt.description
      FROM videos v
      LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?
-     WHERE ${where}
+     WHERE ${dataFilter.where}
      ORDER BY ${orderBy}
      LIMIT ? OFFSET ?`,
-    [locale, ...params, limit, useCursor ? 0 : offset],
+    [locale, ...dataFilter.params, limit, useCursor ? 0 : offset],
   );
 
   const mapped = videos.map((v) => ({
@@ -372,16 +349,11 @@ content.get('/videos', async (c) => {
     createdAt: v.created_at,
   }));
 
-  // Build cursor-based pagination response
-  const lastItem = videos[videos.length - 1];
-  const nextCursor = lastItem ? encodeCursor(lastItem.id) : null;
-  const hasMore = videos.length === limit;
-
   return c.json({
     data: mapped,
     pagination: useCursor
-      ? { cursor: nextCursor, hasMore, total, limit }
-      : { page, limit, total, totalPages: Math.ceil(total / limit) },
+      ? buildCursorPagination(videos, limit, total)
+      : buildOffsetPagination(page, limit, total),
   });
 });
 
