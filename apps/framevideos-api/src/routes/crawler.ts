@@ -18,8 +18,10 @@ const crawler = new Hono<AppContext>();
 
 // ─── Auth + admin guard ──────────────────────────────────────────────────────
 
-crawler.use('/*', authMiddleware());
-crawler.use('/*', async (c, next) => {
+crawler.use('*', async (c, next) => {
+  return authMiddleware(c.env.JWT_SECRET)(c, next);
+});
+crawler.use('*', async (c, next) => {
   const role = c.get('userRole');
   if (role !== 'tenant_admin' && role !== 'super_admin') {
     throw new ForbiddenError('Apenas administradores podem gerenciar o crawler');

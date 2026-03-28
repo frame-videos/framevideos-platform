@@ -12,8 +12,10 @@ const security = new Hono<AppContext>();
 
 // ─── Auth + super_admin guard ────────────────────────────────────────────────
 
-security.use('/*', authMiddleware());
-security.use('/*', async (c, next) => {
+security.use('*', async (c, next) => {
+  return authMiddleware(c.env.JWT_SECRET)(c, next);
+});
+security.use('*', async (c, next) => {
   const role = c.get('userRole');
   if (role !== 'super_admin') {
     throw new ForbiddenError('Acesso restrito a super administradores.');
