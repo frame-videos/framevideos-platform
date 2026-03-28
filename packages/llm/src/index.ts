@@ -22,3 +22,6 @@ export {
 } from './prompts.js';
 
 export { OPERATION_COSTS } from './costs.js';
+
+export type { LlmProviderPreset } from './providers.js';
+export { LLM_PROVIDER_PRESETS } from './providers.js';

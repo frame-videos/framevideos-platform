@@ -1,11 +1,15 @@
 // Types for the LLM module
 
-export type LlmProviderName = 'openai' | 'anthropic';
+export type LlmProviderName = 'openai' | 'anthropic' | 'custom';
 
 export interface LlmConfig {
   provider: LlmProviderName;
   apiKey: string;
   model: string;
+  baseUrl?: string;        // Custom API endpoint (OpenAI-compatible)
+  providerName?: string;   // Display name (e.g., "Groq", "Together", "Ollama")
+  maxTokens?: number;
+  temperature?: number;
 }
 
 export interface LlmMessage {

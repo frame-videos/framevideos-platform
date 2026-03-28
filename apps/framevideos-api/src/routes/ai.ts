@@ -20,7 +20,7 @@ import {
   translateContent,
   OPERATION_COSTS,
 } from '@frame-videos/llm';
-import type { LlmConfig, VideoInfo } from '@frame-videos/llm';
+import type { LlmConfig, LlmProviderName, VideoInfo } from '@frame-videos/llm';
 import { requireCredits, debitCredits, logLlmUsage } from './credits.js';
 
 const ai = new Hono<AppContext>();
@@ -41,16 +41,44 @@ ai.use('*', async (c, next) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getLlmConfig(env: AppContext['Bindings']): LlmConfig {
-  if (!env.LLM_API_KEY) {
-    throw new ValidationError('LLM não configurado. Configure LLM_API_KEY no ambiente.');
+async function getLlmConfig(env: AppContext['Bindings'], db: D1Client): Promise<LlmConfig> {
+  // Try database config first (active config takes priority)
+  const dbConfig = await db.queryOne<{
+    provider: string;
+    model: string;
+    api_key: string;
+    base_url: string;
+    provider_name: string;
+    max_tokens: number;
+    temperature: number;
+    is_active: number;
+  }>(
+    'SELECT provider, model, api_key, base_url, provider_name, max_tokens, temperature, is_active FROM llm_config WHERE is_active = 1 LIMIT 1',
+    [],
+  ).catch(() => null);
+
+  if (dbConfig && dbConfig.api_key) {
+    return {
+      provider: dbConfig.provider as LlmProviderName,
+      apiKey: dbConfig.api_key,
+      model: dbConfig.model,
+      baseUrl: dbConfig.base_url || undefined,
+      providerName: dbConfig.provider_name || undefined,
+      maxTokens: dbConfig.max_tokens || 2048,
+      temperature: dbConfig.temperature || 0.7,
+    };
   }
 
-  return {
-    provider: (env.LLM_PROVIDER as 'openai' | 'anthropic') || 'openai',
-    apiKey: env.LLM_API_KEY,
-    model: env.LLM_MODEL || 'gpt-4o-mini',
-  };
+  // Fallback to env vars (backward compatible)
+  if (env.LLM_API_KEY) {
+    return {
+      provider: (env.LLM_PROVIDER as LlmProviderName) || 'openai',
+      apiKey: env.LLM_API_KEY,
+      model: env.LLM_MODEL || 'gpt-4o-mini',
+    };
+  }
+
+  throw new ValidationError('LLM não configurado. Configure no painel Super Admin ou defina LLM_API_KEY no ambiente.');
 }
 
 /**
@@ -138,7 +166,7 @@ ai.post('/generate/title', async (c) => {
   const videoInfo = await fetchVideoInfo(db, body.videoId, tenantId);
 
   // Generate
-  const config = getLlmConfig(c.env);
+  const config = await getLlmConfig(c.env, db);
   const prompt = generateVideoTitle(videoInfo);
   const result = await callLlm(config, {
     messages: [
@@ -176,7 +204,7 @@ ai.post('/generate/description', async (c) => {
   await requireCredits(db, tenantId, cost);
 
   const videoInfo = await fetchVideoInfo(db, body.videoId, tenantId);
-  const config = getLlmConfig(c.env);
+  const config = await getLlmConfig(c.env, db);
   const prompt = generateVideoDescription(videoInfo);
 
   const result = await callLlm(config, {
@@ -214,7 +242,7 @@ ai.post('/generate/keywords', async (c) => {
   await requireCredits(db, tenantId, cost);
 
   const videoInfo = await fetchVideoInfo(db, body.videoId, tenantId);
-  const config = getLlmConfig(c.env);
+  const config = await getLlmConfig(c.env, db);
   const prompt = generateVideoKeywords(videoInfo);
 
   const result = await callLlm(config, {
@@ -264,7 +292,7 @@ ai.post('/generate/faq', async (c) => {
   await requireCredits(db, tenantId, cost);
 
   const videoInfo = await fetchVideoInfo(db, body.videoId, tenantId);
-  const config = getLlmConfig(c.env);
+  const config = await getLlmConfig(c.env, db);
   const prompt = generateVideoFAQ(videoInfo);
 
   const result = await callLlm(config, {
@@ -353,7 +381,7 @@ ai.post('/translate', async (c) => {
     throw new NotFoundError(`Tradução de origem para ${contentType}`, contentId);
   }
 
-  const config = getLlmConfig(c.env);
+  const config = await getLlmConfig(c.env, db);
   const results: Record<string, Record<string, string>> = {};
   let totalInputTokens = 0;
   let totalOutputTokens = 0;

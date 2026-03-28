@@ -8,7 +8,8 @@
     "./costs": "./src/costs.ts",
     "./client": "./src/client.ts",
     "./prompts": "./src/prompts.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./providers": "./src/providers.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

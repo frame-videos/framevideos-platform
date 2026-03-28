@@ -7,6 +7,8 @@ import { D1Client } from '@frame-videos/db';
 import { authMiddleware } from '@frame-videos/auth';
 import { ForbiddenError, NotFoundError, ValidationError } from '@frame-videos/shared/errors';
 import { generateUlid } from '@frame-videos/shared/utils';
+import { callLlm } from '@frame-videos/llm';
+import type { LlmConfig, LlmProviderName } from '@frame-videos/llm';
 
 const admin = new Hono<AppContext>();
 
@@ -342,18 +344,50 @@ admin.get('/llm-config', async (c) => {
     markup_percent: number;
     provider: string;
     model: string;
+    api_key: string;
+    base_url: string;
+    provider_name: string;
+    max_tokens: number;
+    temperature: number;
+    is_active: number;
   }>(
-    'SELECT id, markup_percent, provider, model FROM llm_config LIMIT 1',
+    'SELECT id, markup_percent, provider, model, api_key, base_url, provider_name, max_tokens, temperature, is_active FROM llm_config LIMIT 1',
     [],
   ).catch(() => null);
 
+  // Mask api_key: show only last 4 chars
+  const maskedApiKey = config?.api_key
+    ? `••••${config.api_key.slice(-4)}`
+    : '';
+
   return c.json({
-    data: config ?? {
-      id: null,
-      markup_percent: 150,
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-    },
+    data: config
+      ? {
+          id: config.id,
+          markup_percent: config.markup_percent,
+          provider: config.provider,
+          model: config.model,
+          api_key_masked: maskedApiKey,
+          has_api_key: !!config.api_key,
+          base_url: config.base_url || '',
+          provider_name: config.provider_name || '',
+          max_tokens: config.max_tokens ?? 2048,
+          temperature: config.temperature ?? 0.7,
+          is_active: config.is_active ?? 0,
+        }
+      : {
+          id: null,
+          markup_percent: 150,
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          api_key_masked: '',
+          has_api_key: false,
+          base_url: '',
+          provider_name: '',
+          max_tokens: 2048,
+          temperature: 0.7,
+          is_active: 0,
+        },
   });
 });
 
@@ -362,27 +396,134 @@ admin.get('/llm-config', async (c) => {
 admin.put('/llm-config', async (c) => {
   const body = await c.req.json();
   const db = new D1Client(c.env.DB);
-  const { markup_percent, provider, model } = body;
 
-  const existing = await db.queryOne<{ id: string }>(
-    'SELECT id FROM llm_config LIMIT 1',
+  const {
+    markup_percent,
+    provider,
+    model,
+    api_key,
+    base_url,
+    provider_name,
+    max_tokens,
+    temperature,
+    is_active,
+  } = body;
+
+  // Validate: custom provider requires base_url
+  if (provider === 'custom' && is_active && !base_url) {
+    throw new ValidationError('URL Base é obrigatória para provedor personalizado.');
+  }
+
+  // Validate: active config requires api_key
+  if (is_active && !api_key) {
+    throw new ValidationError('API Key é obrigatória quando a configuração está ativa.');
+  }
+
+  const existing = await db.queryOne<{ id: string; api_key: string }>(
+    'SELECT id, api_key FROM llm_config LIMIT 1',
     [],
   ).catch(() => null);
 
+  // If api_key starts with "••••", keep the existing one (masked value from frontend)
+  const resolvedApiKey = api_key && !api_key.startsWith('••••')
+    ? api_key
+    : existing?.api_key ?? '';
+
   if (existing) {
     await db.execute(
-      'UPDATE llm_config SET markup_percent = ?, provider = ?, model = ? WHERE id = ?',
-      [markup_percent ?? 150, provider ?? 'openai', model ?? 'gpt-4o-mini', existing.id],
+      `UPDATE llm_config SET
+        markup_percent = ?,
+        provider = ?,
+        model = ?,
+        api_key = ?,
+        base_url = ?,
+        provider_name = ?,
+        max_tokens = ?,
+        temperature = ?,
+        is_active = ?,
+        updated_at = datetime('now')
+      WHERE id = ?`,
+      [
+        markup_percent ?? 150,
+        provider ?? 'openai',
+        model ?? 'gpt-4o-mini',
+        resolvedApiKey,
+        base_url ?? '',
+        provider_name ?? '',
+        max_tokens ?? 2048,
+        temperature ?? 0.7,
+        is_active ? 1 : 0,
+        existing.id,
+      ],
     );
   } else {
     const configId = generateUlid();
     await db.execute(
-      'INSERT INTO llm_config (id, markup_percent, provider, model) VALUES (?, ?, ?, ?)',
-      [configId, markup_percent ?? 150, provider ?? 'openai', model ?? 'gpt-4o-mini'],
+      `INSERT INTO llm_config (id, markup_percent, provider, model, api_key, base_url, provider_name, max_tokens, temperature, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        configId,
+        markup_percent ?? 150,
+        provider ?? 'openai',
+        model ?? 'gpt-4o-mini',
+        resolvedApiKey,
+        base_url ?? '',
+        provider_name ?? '',
+        max_tokens ?? 2048,
+        temperature ?? 0.7,
+        is_active ? 1 : 0,
+      ],
     );
   }
 
   return c.json({ success: true });
+});
+
+// ─── POST /admin/llm-config/test ─────────────────────────────────────────────
+
+admin.post('/llm-config/test', async (c) => {
+  const body = await c.req.json();
+  const { provider, api_key, model, base_url } = body;
+
+  if (!api_key || !model) {
+    throw new ValidationError('API Key e Modelo são obrigatórios para o teste.');
+  }
+
+  const config: LlmConfig = {
+    provider: (provider as LlmProviderName) ?? 'openai',
+    apiKey: api_key,
+    model,
+    baseUrl: base_url || undefined,
+  };
+
+  const start = Date.now();
+
+  try {
+    const response = await callLlm(config, {
+      messages: [
+        { role: 'system', content: 'Responda apenas "OK".' },
+        { role: 'user', content: 'Teste de conexão.' },
+      ],
+      maxTokens: 10,
+      temperature: 0,
+    });
+
+    return c.json({
+      success: true,
+      model: response.model,
+      latencyMs: Date.now() - start,
+      response: response.text,
+    });
+  } catch (err) {
+    return c.json(
+      {
+        success: false,
+        error: err instanceof Error ? err.message : 'Erro desconhecido',
+        latencyMs: Date.now() - start,
+      },
+      400,
+    );
+  }
 });
 
 // ─── GET /admin/stats ────────────────────────────────────────────────────────

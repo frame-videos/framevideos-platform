@@ -135,11 +135,72 @@ async function callAnthropic(config: LlmConfig, request: LlmRequest): Promise<Ll
 }
 
 /**
+ * Call a custom OpenAI-compatible endpoint.
+ * Works with Groq, Together, Mistral, Ollama, vLLM, LiteLLM, etc.
+ */
+async function callCustom(config: LlmConfig, request: LlmRequest): Promise<LlmResponse> {
+  if (!config.baseUrl) {
+    throw new Error('Custom provider requires a baseUrl');
+  }
+
+  const body = {
+    model: config.model,
+    messages: request.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+    max_tokens: request.maxTokens ?? config.maxTokens ?? 2048,
+    temperature: request.temperature ?? config.temperature ?? 0.7,
+  };
+
+  const res = await fetch(config.baseUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Custom LLM API error ${res.status}: ${errBody}`);
+  }
+
+  const data = (await res.json()) as OpenAIResponse;
+  const choice = data.choices?.[0];
+
+  if (!choice) {
+    throw new Error('Custom LLM returned no choices');
+  }
+
+  return {
+    text: choice.message.content,
+    inputTokens: data.usage?.prompt_tokens ?? 0,
+    outputTokens: data.usage?.completion_tokens ?? 0,
+    model: data.model ?? config.model,
+    finishReason: mapFinishReason(choice.finish_reason ?? 'stop'),
+  };
+}
+
+/**
  * Call the LLM with retry + exponential backoff.
  * Retries on 429, 500, 502, 503, 529 errors.
  */
 export async function callLlm(config: LlmConfig, request: LlmRequest): Promise<LlmResponse> {
-  const caller = config.provider === 'anthropic' ? callAnthropic : callOpenAI;
+  let caller: (cfg: LlmConfig, req: LlmRequest) => Promise<LlmResponse>;
+
+  switch (config.provider) {
+    case 'anthropic':
+      caller = callAnthropic;
+      break;
+    case 'custom':
+      caller = callCustom;
+      break;
+    default:
+      caller = callOpenAI;
+      break;
+  }
 
   let lastError: Error | null = null;
 
