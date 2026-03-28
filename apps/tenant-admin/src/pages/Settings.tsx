@@ -1,0 +1,294 @@
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/api';
+
+interface SiteSettings {
+  siteName: string;
+  logoUrl: string;
+  faviconUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+  googleAnalyticsId: string;
+  customCss: string;
+  customScriptsHead: string;
+  customScriptsBody: string;
+}
+
+const defaultSettings: SiteSettings = {
+  siteName: '',
+  logoUrl: '',
+  faviconUrl: '',
+  primaryColor: '#9333ea',
+  secondaryColor: '#6366f1',
+  googleAnalyticsId: '',
+  customCss: '',
+  customScriptsHead: '',
+  customScriptsBody: '',
+};
+
+export function SettingsPage() {
+  const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const data = await api<SiteSettings>('/api/v1/content/settings');
+        setSettings({ ...defaultSettings, ...data });
+      } catch (err) {
+        // Settings may not exist yet — use defaults
+        console.error('Failed to load settings:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadSettings();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await api('/api/v1/content/settings', { method: 'PUT', body: settings });
+      setSuccess('Configurações salvas com sucesso!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao salvar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateField = <K extends keyof SiteSettings>(key: K, value: SiteSettings[K]) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
+      </div>
+    );
+  }
+
+  const inputClass =
+    'w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 text-sm';
+  const labelClass = 'block text-sm font-medium text-gray-300 mb-1.5';
+
+  return (
+    <div className="max-w-4xl">
+      <h1 className="text-2xl font-bold mb-6">Configurações</h1>
+
+      {error && (
+        <div className="mb-6 p-4 rounded-lg bg-red-900/30 border border-red-800/50 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="mb-6 p-4 rounded-lg bg-green-900/30 border border-green-800/50 text-green-400 text-sm">
+          {success}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-8">
+        {/* General */}
+        <section className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+          <h2 className="text-lg font-semibold mb-4">Geral</h2>
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>Nome do Site *</label>
+              <input
+                type="text"
+                value={settings.siteName}
+                onChange={(e) => updateField('siteName', e.target.value)}
+                required
+                className={inputClass}
+                placeholder="Meu Site de Vídeos"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>URL do Logo</label>
+                <input
+                  type="url"
+                  value={settings.logoUrl}
+                  onChange={(e) => updateField('logoUrl', e.target.value)}
+                  className={inputClass}
+                  placeholder="https://..."
+                />
+                {settings.logoUrl && (
+                  <div className="mt-2 p-2 bg-gray-800 rounded-lg inline-block">
+                    <img
+                      src={settings.logoUrl}
+                      alt="Logo preview"
+                      className="h-10 object-contain"
+                      onError={(e) => (e.currentTarget.style.display = 'none')}
+                    />
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className={labelClass}>URL do Favicon</label>
+                <input
+                  type="url"
+                  value={settings.faviconUrl}
+                  onChange={(e) => updateField('faviconUrl', e.target.value)}
+                  className={inputClass}
+                  placeholder="https://..."
+                />
+                {settings.faviconUrl && (
+                  <div className="mt-2 inline-block">
+                    <img
+                      src={settings.faviconUrl}
+                      alt="Favicon preview"
+                      className="h-6 w-6 object-contain"
+                      onError={(e) => (e.currentTarget.style.display = 'none')}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Colors */}
+        <section className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+          <h2 className="text-lg font-semibold mb-4">Cores</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Cor Primária</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={settings.primaryColor}
+                  onChange={(e) => updateField('primaryColor', e.target.value)}
+                  className="w-10 h-10 rounded-lg border border-gray-700 bg-transparent cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={settings.primaryColor}
+                  onChange={(e) => updateField('primaryColor', e.target.value)}
+                  className={inputClass}
+                  placeholder="#9333ea"
+                  pattern="^#[0-9A-Fa-f]{6}$"
+                />
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>Cor Secundária</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={settings.secondaryColor}
+                  onChange={(e) => updateField('secondaryColor', e.target.value)}
+                  className="w-10 h-10 rounded-lg border border-gray-700 bg-transparent cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={settings.secondaryColor}
+                  onChange={(e) => updateField('secondaryColor', e.target.value)}
+                  className={inputClass}
+                  placeholder="#6366f1"
+                  pattern="^#[0-9A-Fa-f]{6}$"
+                />
+              </div>
+            </div>
+          </div>
+          {/* Color preview */}
+          <div className="flex items-center gap-3 mt-4">
+            <span className="text-xs text-gray-500">Preview:</span>
+            <div
+              className="h-8 w-24 rounded-lg"
+              style={{ backgroundColor: settings.primaryColor }}
+            />
+            <div
+              className="h-8 w-24 rounded-lg"
+              style={{ backgroundColor: settings.secondaryColor }}
+            />
+          </div>
+        </section>
+
+        {/* Analytics */}
+        <section className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+          <h2 className="text-lg font-semibold mb-4">Analytics</h2>
+          <div>
+            <label className={labelClass}>Google Analytics ID</label>
+            <input
+              type="text"
+              value={settings.googleAnalyticsId}
+              onChange={(e) => updateField('googleAnalyticsId', e.target.value)}
+              className={inputClass}
+              placeholder="G-XXXXXXXXXX"
+            />
+            <p className="mt-1.5 text-xs text-gray-500">
+              ID de medição do Google Analytics 4 (formato: G-XXXXXXXXXX)
+            </p>
+          </div>
+        </section>
+
+        {/* Custom Code */}
+        <section className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+          <h2 className="text-lg font-semibold mb-4">Código Personalizado</h2>
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>CSS Personalizado</label>
+              <textarea
+                value={settings.customCss}
+                onChange={(e) => updateField('customCss', e.target.value)}
+                rows={6}
+                className={`${inputClass} font-mono text-xs leading-relaxed`}
+                placeholder={`/* Estilos personalizados */\n.header {\n  background: #000;\n}`}
+              />
+            </div>
+
+            <div>
+              <label className={labelClass}>Scripts no &lt;head&gt;</label>
+              <textarea
+                value={settings.customScriptsHead}
+                onChange={(e) => updateField('customScriptsHead', e.target.value)}
+                rows={4}
+                className={`${inputClass} font-mono text-xs leading-relaxed`}
+                placeholder={`<!-- Scripts carregados no <head> -->\n<script src="..."></script>`}
+              />
+              <p className="mt-1.5 text-xs text-gray-500">
+                Carregado antes do conteúdo da página. Use para meta tags, scripts de tracking, etc.
+              </p>
+            </div>
+
+            <div>
+              <label className={labelClass}>Scripts no &lt;body&gt;</label>
+              <textarea
+                value={settings.customScriptsBody}
+                onChange={(e) => updateField('customScriptsBody', e.target.value)}
+                rows={4}
+                className={`${inputClass} font-mono text-xs leading-relaxed`}
+                placeholder={`<!-- Scripts carregados no final do <body> -->\n<script src="..."></script>`}
+              />
+              <p className="mt-1.5 text-xs text-gray-500">
+                Carregado após o conteúdo da página. Use para widgets, chat, etc.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Submit */}
+        <div className="flex items-center gap-3 pt-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+          >
+            {saving ? 'Salvando...' : 'Salvar Configurações'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
