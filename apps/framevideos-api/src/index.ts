@@ -11,6 +11,8 @@ import { health } from './routes/health.js';
 import { auth } from './routes/auth.js';
 import { billing } from './routes/billing.js';
 import { domains } from './routes/domains.js';
+import { content } from './routes/content.js';
+import { publicRoutes } from './routes/public.js';
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -53,6 +55,8 @@ app.route('/health', health);
 app.route('/api/v1/auth', auth);
 app.route('/api/v1/billing', billing);
 app.route('/api/v1/domains', domains);
+app.route('/api/v1/content', content);
+app.route('/api/v1/public', publicRoutes);
 
 // 404 catch-all
 app.notFound((c) => {
