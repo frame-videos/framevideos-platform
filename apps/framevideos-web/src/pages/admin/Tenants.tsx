@@ -1,48 +1,52 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 
 interface Tenant {
   id: string;
   name: string;
-  email: string;
-  plan: string;
-  status: 'active' | 'inactive' | 'suspended';
-  sites: number;
-  users: number;
-  createdAt: string;
+  slug: string;
+  status: string;
+  plan_name: string | null;
+  created_at: string;
 }
 
-const mockTenants: Tenant[] = [
-  { id: '1', name: 'VideoMax Studio', email: 'admin@videomax.com', plan: 'Pro', status: 'active', sites: 5, users: 3, createdAt: '2026-01-15' },
-  { id: '2', name: 'Content Hub', email: 'hello@contenthub.io', plan: 'Starter', status: 'active', sites: 2, users: 1, createdAt: '2026-02-10' },
-  { id: '3', name: 'MediaFlow', email: 'team@mediaflow.tv', plan: 'Business', status: 'active', sites: 12, users: 5, createdAt: '2025-11-20' },
-  { id: '4', name: 'StreamPro', email: 'info@streampro.net', plan: 'Free', status: 'inactive', sites: 0, users: 1, createdAt: '2026-03-01' },
-  { id: '5', name: 'TubeNetwork', email: 'admin@tubenetwork.com', plan: 'Pro', status: 'active', sites: 8, users: 4, createdAt: '2025-09-05' },
-  { id: '6', name: 'VidWorld', email: 'contact@vidworld.com', plan: 'Starter', status: 'suspended', sites: 1, users: 1, createdAt: '2026-01-28' },
-];
-
-const statusMap = {
-  active: { label: 'Ativo', variant: 'success' as const },
-  inactive: { label: 'Inativo', variant: 'default' as const },
-  suspended: { label: 'Suspenso', variant: 'danger' as const },
+const statusMap: Record<string, { label: string; variant: 'success' | 'default' | 'danger' }> = {
+  active: { label: 'Ativo', variant: 'success' },
+  trial: { label: 'Trial', variant: 'default' },
+  inactive: { label: 'Inativo', variant: 'default' },
+  suspended: { label: 'Suspenso', variant: 'danger' },
 };
 
 export function Tenants() {
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterPlan, setFilterPlan] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
 
-  const filtered = mockTenants.filter((t) => {
-    const matchSearch =
-      t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.email.toLowerCase().includes(search.toLowerCase());
-    const matchPlan = filterPlan === 'all' || t.plan.toLowerCase() === filterPlan;
-    const matchStatus = filterStatus === 'all' || t.status === filterStatus;
-    return matchSearch && matchPlan && matchStatus;
-  });
+  useEffect(() => {
+    async function load() {
+      try {
+        const token = localStorage.getItem('accessToken');
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch('/api/v1/admin/tenants?limit=50', { headers });
+        const data = await res.json();
+        setTenants(data?.data ?? []);
+      } catch (err) {
+        console.error('Failed to load tenants:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const filtered = tenants.filter((t) =>
+    t.name.toLowerCase().includes(search.toLowerCase()) ||
+    t.slug.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
@@ -53,94 +57,66 @@ export function Tenants() {
         </p>
       </div>
 
-      {/* Filters */}
       <Card>
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <Input
-              placeholder="Buscar por nome ou email..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <select
-            className="rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-dark-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            value={filterPlan}
-            onChange={(e) => setFilterPlan(e.target.value)}
-          >
-            <option value="all">Todos os planos</option>
-            <option value="free">Free</option>
-            <option value="starter">Starter</option>
-            <option value="pro">Pro</option>
-            <option value="business">Business</option>
-          </select>
-          <select
-            className="rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-dark-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-          >
-            <option value="all">Todos os status</option>
-            <option value="active">Ativo</option>
-            <option value="inactive">Inativo</option>
-            <option value="suspended">Suspenso</option>
-          </select>
+        <div className="flex-1">
+          <Input
+            placeholder="Buscar por nome ou slug..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
       </Card>
 
-      {/* Table */}
       <Card padding="none">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left">
-                <th className="px-6 py-4 font-medium text-dark-400">Tenant</th>
-                <th className="px-6 py-4 font-medium text-dark-400">Plano</th>
-                <th className="px-6 py-4 font-medium text-dark-400">Status</th>
-                <th className="px-6 py-4 font-medium text-dark-400">Sites</th>
-                <th className="px-6 py-4 font-medium text-dark-400">Usuários</th>
-                <th className="px-6 py-4 font-medium text-dark-400">Criado em</th>
-                <th className="px-6 py-4 font-medium text-dark-400"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((tenant) => (
-                <tr key={tenant.id} className="border-b border-border/50 last:border-0 hover:bg-surface-light/50">
-                  <td className="px-6 py-4">
-                    <div>
-                      <p className="font-medium text-dark-100">{tenant.name}</p>
-                      <p className="text-xs text-dark-500">{tenant.email}</p>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <Badge variant="primary">{tenant.plan}</Badge>
-                  </td>
-                  <td className="px-6 py-4">
-                    <Badge variant={statusMap[tenant.status].variant}>
-                      {statusMap[tenant.status].label}
-                    </Badge>
-                  </td>
-                  <td className="px-6 py-4 text-dark-300">{tenant.sites}</td>
-                  <td className="px-6 py-4 text-dark-300">{tenant.users}</td>
-                  <td className="px-6 py-4 text-dark-400 text-xs">
-                    {new Date(tenant.createdAt).toLocaleDateString('pt-BR')}
-                  </td>
-                  <td className="px-6 py-4">
-                    <Button size="sm" variant="ghost">
-                      Detalhes
-                    </Button>
-                  </td>
+        {loading ? (
+          <div className="p-8 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mx-auto" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <th className="px-6 py-4 font-medium text-dark-400">Tenant</th>
+                  <th className="px-6 py-4 font-medium text-dark-400">Plano</th>
+                  <th className="px-6 py-4 font-medium text-dark-400">Status</th>
+                  <th className="px-6 py-4 font-medium text-dark-400">Criado em</th>
                 </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-dark-500">
-                    Nenhum tenant encontrado.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filtered.map((tenant) => {
+                  const st = statusMap[tenant.status] ?? { label: tenant.status, variant: 'default' as const };
+                  return (
+                    <tr key={tenant.id} className="border-b border-border/50 last:border-0 hover:bg-surface-light/50">
+                      <td className="px-6 py-4">
+                        <div>
+                          <p className="font-medium text-dark-100">{tenant.name}</p>
+                          <p className="text-xs text-dark-500">{tenant.slug}</p>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <Badge variant="primary">{tenant.plan_name ?? 'Free'}</Badge>
+                      </td>
+                      <td className="px-6 py-4">
+                        <Badge variant={st.variant}>{st.label}</Badge>
+                      </td>
+                      <td className="px-6 py-4 text-dark-400 text-xs">
+                        {new Date(tenant.created_at).toLocaleDateString('pt-BR')}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center text-dark-500">
+                      Nenhum tenant encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   );

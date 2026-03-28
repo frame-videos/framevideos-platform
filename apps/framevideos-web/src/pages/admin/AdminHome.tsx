@@ -1,7 +1,58 @@
+import { useEffect, useState } from 'react';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { Card } from '@/components/ui/Card';
 
+interface AdminStats {
+  totalTenants: number;
+  totalUsers: number;
+  activeSites: number;
+}
+
+interface RecentTenant {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  created_at: string;
+}
+
 export function AdminHome() {
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [tenants, setTenants] = useState<RecentTenant[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const token = localStorage.getItem('accessToken');
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const [tenantsRes, usersRes] = await Promise.all([
+          fetch('/api/v1/admin/tenants?limit=10', { headers }).then(r => r.json()).catch(() => ({ data: [], pagination: { total: 0 } })),
+          fetch('/api/v1/admin/users?limit=1', { headers }).then(r => r.json()).catch(() => ({ pagination: { total: 0 } })),
+        ]);
+
+        const tenantList = tenantsRes?.data ?? [];
+        const activeSites = tenantList.filter((t: RecentTenant) => t.status === 'active').length;
+
+        setStats({
+          totalTenants: tenantsRes?.pagination?.total ?? tenantList.length,
+          totalUsers: usersRes?.pagination?.total ?? 0,
+          activeSites,
+        });
+        setTenants(tenantList.slice(0, 5));
+      } catch (err) {
+        console.error('Failed to load admin stats:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const formatNumber = (n: number) => n.toLocaleString('pt-BR');
+
   return (
     <div className="space-y-8">
       <div>
@@ -11,104 +62,83 @@ export function AdminHome() {
         </p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard
-          title="Total de Tenants"
-          value="127"
-          change="+8 este mês"
-          changeType="positive"
-          icon={
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-            </svg>
-          }
-        />
-        <StatsCard
-          title="MRR"
-          value="$2.340"
-          change="+15.3%"
-          changeType="positive"
-          iconColor="bg-green-600/20 text-green-400"
-          icon={
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
-        />
-        <StatsCard
-          title="Usuários Totais"
-          value="312"
-          change="+24"
-          changeType="positive"
-          iconColor="bg-blue-600/20 text-blue-400"
-          icon={
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
-          }
-        />
-        <StatsCard
-          title="Sites Ativos"
-          value="89"
-          change="+5"
-          changeType="positive"
-          iconColor="bg-yellow-600/20 text-yellow-400"
-          icon={
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
-            </svg>
-          }
-        />
-      </div>
-
-      {/* Revenue Chart placeholder */}
-      <Card>
-        <h3 className="text-lg font-semibold text-white mb-4">Receita Mensal</h3>
-        <div className="flex items-end gap-2 h-48">
-          {[35, 45, 52, 48, 61, 55, 67, 72, 68, 78, 85, 92].map((val, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <div
-                className="w-full rounded-t bg-primary-600/60 hover:bg-primary-600 transition-colors"
-                style={{ height: `${val}%` }}
-              />
-              <span className="text-[10px] text-dark-500">
-                {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][i]}
-              </span>
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="bg-dark-900 rounded-xl p-5 border border-dark-800 animate-pulse">
+              <div className="h-4 bg-dark-800 rounded w-20 mb-3" />
+              <div className="h-8 bg-dark-800 rounded w-16" />
             </div>
           ))}
         </div>
-      </Card>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <StatsCard
+            title="Total de Tenants"
+            value={formatNumber(stats?.totalTenants ?? 0)}
+            icon={
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            }
+          />
+          <StatsCard
+            title="Usuários Totais"
+            value={formatNumber(stats?.totalUsers ?? 0)}
+            iconColor="bg-blue-600/20 text-blue-400"
+            icon={
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            }
+          />
+          <StatsCard
+            title="Sites Ativos"
+            value={formatNumber(stats?.activeSites ?? 0)}
+            iconColor="bg-green-600/20 text-green-400"
+            icon={
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
+              </svg>
+            }
+          />
+        </div>
+      )}
 
       {/* Recent Tenants */}
       <Card>
         <h3 className="text-lg font-semibold text-white mb-4">Últimos Tenants</h3>
-        <div className="space-y-3">
-          {[
-            { name: 'VideoMax Studio', email: 'admin@videomax.com', plan: 'Pro', date: '27/03/2026' },
-            { name: 'Content Hub', email: 'hello@contenthub.io', plan: 'Starter', date: '26/03/2026' },
-            { name: 'MediaFlow', email: 'team@mediaflow.tv', plan: 'Business', date: '25/03/2026' },
-            { name: 'StreamPro', email: 'info@streampro.net', plan: 'Free', date: '24/03/2026' },
-          ].map((tenant, i) => (
-            <div key={i} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-600/20 text-primary-400 text-xs font-semibold">
-                  {tenant.name.slice(0, 2).toUpperCase()}
+        {tenants.length === 0 ? (
+          <p className="text-sm text-dark-500">Nenhum tenant cadastrado ainda.</p>
+        ) : (
+          <div className="space-y-3">
+            {tenants.map((tenant) => (
+              <div key={tenant.id} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-600/20 text-primary-400 text-xs font-semibold">
+                    {tenant.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-dark-100">{tenant.name}</p>
+                    <p className="text-xs text-dark-500">{tenant.slug}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-dark-100">{tenant.name}</p>
-                  <p className="text-xs text-dark-500">{tenant.email}</p>
+                <div className="text-right">
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    tenant.status === 'active' ? 'text-green-400 bg-green-600/20' :
+                    tenant.status === 'trial' ? 'text-yellow-400 bg-yellow-600/20' :
+                    'text-dark-400 bg-dark-700'
+                  }`}>
+                    {tenant.status === 'active' ? 'Ativo' : tenant.status === 'trial' ? 'Trial' : tenant.status}
+                  </span>
+                  <p className="text-xs text-dark-500 mt-1">
+                    {new Date(tenant.created_at).toLocaleDateString('pt-BR')}
+                  </p>
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-xs font-medium text-primary-400 bg-primary-600/20 px-2 py-0.5 rounded-full">
-                  {tenant.plan}
-                </span>
-                <p className="text-xs text-dark-500 mt-1">{tenant.date}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
