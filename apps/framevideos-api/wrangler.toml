@@ -20,7 +20,7 @@ bucket_name = "frame-videos-storage"
 # KV
 [[kv_namespaces]]
 binding = "CACHE"
-id = "c73b1250b86b4b42b108f6b2b6a3829f"
+id = "6be904ed61714310b45e04f7c181f1ba"
 
 [vars]
 ENVIRONMENT = "development"
@@ -41,7 +41,7 @@ bucket_name = "frame-videos-storage"
 
 [[env.staging.kv_namespaces]]
 binding = "CACHE"
-id = "c73b1250b86b4b42b108f6b2b6a3829f"
+id = "6be904ed61714310b45e04f7c181f1ba"
 
 [env.production]
 name = "framevideos-api"
@@ -60,4 +60,4 @@ bucket_name = "frame-videos-storage"
 
 [[env.production.kv_namespaces]]
 binding = "CACHE"
-id = "c73b1250b86b4b42b108f6b2b6a3829f"
+id = "6be904ed61714310b45e04f7c181f1ba"
