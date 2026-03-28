@@ -91,6 +91,24 @@ billing.post('/webhook', async (c) => {
 // ─── Auth middleware — aplicado em todas as rotas ABAIXO ─────────────────────
 // IMPORTANTE: webhook já foi registrado ANTES deste use(), então não é afetado
 
+// ─── GET /plans (public, no auth) ────────────────────────────────────────────
+
+billing.get('/plans', async (c) => {
+  const db = new D1Client(c.env.DB);
+  const plans = await db.query<{
+    id: string; name: string; slug: string; price_cents: number;
+    currency: string; max_videos: number; max_domains: number;
+    max_languages: number; llm_credits_monthly: number;
+    features_json: string | null; stripe_price_id: string | null;
+    billing_interval: string | null;
+  }>(
+    'SELECT id, name, slug, price_cents, currency, max_videos, max_domains, max_languages, llm_credits_monthly, features_json, stripe_price_id, billing_interval FROM plans WHERE is_active = 1 ORDER BY price_cents ASC',
+    [],
+  );
+  return c.json({ data: plans });
+});
+
+// Auth middleware for all other billing routes
 billing.use('*', async (c, next) => {
   return authMiddleware(c.env.JWT_SECRET)(c, next);
 });
