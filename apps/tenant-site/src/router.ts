@@ -22,6 +22,12 @@ export function matchRoute(pathname: string): RouteMatch {
   if (path === '/tags') return { handler: 'tags', params: {}, locale: detectedLocale };
   if (path === '/channels') return { handler: 'channels', params: {}, locale: detectedLocale };
 
+  // Auth routes
+  if (path === '/login') return { handler: 'auth-login', params: {}, locale: detectedLocale };
+  if (path === '/signup') return { handler: 'auth-signup', params: {}, locale: detectedLocale };
+  if (path === '/forgot-password') return { handler: 'auth-forgot', params: {}, locale: detectedLocale };
+  if (path === '/reset-password') return { handler: 'auth-reset', params: {}, locale: detectedLocale };
+
   // Parameterized routes
   const videoMatch = path.match(/^\/video\/([^/]+)$/);
   if (videoMatch) return { handler: 'video', params: { slug: videoMatch[1]! }, locale: detectedLocale };

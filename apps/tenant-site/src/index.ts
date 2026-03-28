@@ -15,6 +15,7 @@ import { renderTagsPage, renderTagPage } from './renderers/tags.js';
 import { renderChannelsPage, renderChannelPage } from './renderers/channels.js';
 import { renderStaticPage } from './renderers/pages.js';
 import { renderSearchPage } from './renderers/search.js';
+import { renderLoginPage, renderSignupPage, renderForgotPasswordPage, renderResetPasswordPage } from './renderers/auth.js';
 import { render404Page } from './renderers/error.js';
 import { handleAdminRequest } from './renderers/admin.js';
 import { addSecurityHeaders } from './helpers/security.js';
@@ -218,6 +219,20 @@ export default {
         case 'page':
           html = await renderStaticPage(env.DB, tenant, settings, locale, route.params['slug']!, localeConfig);
           break;
+        case 'auth-login':
+          html = renderLoginPage(settings, tenant);
+          break;
+        case 'auth-signup':
+          html = renderSignupPage(settings, tenant);
+          break;
+        case 'auth-forgot':
+          html = renderForgotPasswordPage(settings, tenant);
+          break;
+        case 'auth-reset': {
+          const resetToken = url.searchParams.get('token') ?? '';
+          html = renderResetPasswordPage(settings, tenant, resetToken);
+          break;
+        }
       }
 
       if (!html) {
