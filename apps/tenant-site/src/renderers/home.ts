@@ -6,9 +6,13 @@ import { esc, videoGrid } from '../helpers/html.js';
 import { layout } from '../templates/layout.js';
 
 export async function renderHomepage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, localeConfig: LocaleConfig): Promise<string> {
-  const { videos: recentVideos } = await getVideos(db, tenant.tenantId, locale, { limit: 12 });
-  const categories = await getCategories(db, tenant.tenantId, locale);
-  const performers = await getPerformers(db, tenant.tenantId, locale);
+  // Parallel queries — 3 at once instead of sequential
+  const [videosResult, categories, performers] = await Promise.all([
+    getVideos(db, tenant.tenantId, locale, { limit: 12 }),
+    getCategories(db, tenant.tenantId, locale),
+    getPerformers(db, tenant.tenantId, locale),
+  ]);
+  const recentVideos = videosResult.videos;
   const featuredPerformers = performers.slice(0, 8);
   const topCategories = categories.filter((c) => c.videoCount > 0).slice(0, 12);
   const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';

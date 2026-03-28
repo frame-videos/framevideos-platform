@@ -33,27 +33,29 @@ export async function getVideos(
     params.push(opts.channelSlug, tenantId);
   }
 
-  const countResult = await db.prepare(
-    `SELECT COUNT(*) as total FROM videos v LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ? WHERE ${where}`
-  ).bind(locale, ...params).first<{ total: number }>();
+  // Run count + data queries in parallel
+  const [countResult, rows] = await Promise.all([
+    db.prepare(
+      `SELECT COUNT(*) as total FROM videos v LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ? WHERE ${where}`
+    ).bind(locale, ...params).first<{ total: number }>(),
+    db.prepare(
+      `SELECT v.slug, v.duration_seconds, v.thumbnail_url, v.view_count,
+              vt.title,
+              (SELECT cht.name FROM video_channels vc2
+               JOIN channels ch2 ON ch2.id = vc2.channel_id
+               LEFT JOIN channel_translations cht ON cht.channel_id = ch2.id AND cht.locale = ?
+               WHERE vc2.video_id = v.id LIMIT 1) as channel_name
+       FROM videos v
+       LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?
+       WHERE ${where}
+       ORDER BY v.created_at DESC
+       LIMIT ? OFFSET ?`
+    ).bind(locale, locale, ...params, limit, offset).all<{
+      slug: string; duration_seconds: number | null; thumbnail_url: string | null;
+      view_count: number; title: string | null; channel_name: string | null;
+    }>(),
+  ]);
   const total = countResult?.total ?? 0;
-
-  const rows = await db.prepare(
-    `SELECT v.slug, v.duration_seconds, v.thumbnail_url, v.view_count,
-            vt.title,
-            (SELECT cht.name FROM video_channels vc2
-             JOIN channels ch2 ON ch2.id = vc2.channel_id
-             LEFT JOIN channel_translations cht ON cht.channel_id = ch2.id AND cht.locale = ?
-             WHERE vc2.video_id = v.id LIMIT 1) as channel_name
-     FROM videos v
-     LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?
-     WHERE ${where}
-     ORDER BY v.created_at DESC
-     LIMIT ? OFFSET ?`
-  ).bind(locale, locale, ...params, limit, offset).all<{
-    slug: string; duration_seconds: number | null; thumbnail_url: string | null;
-    view_count: number; title: string | null; channel_name: string | null;
-  }>();
 
   return {
     total,

@@ -104,8 +104,19 @@ export default {
         });
       }
 
-      // Load locale config early (needed for sitemaps/robots)
-      const localeConfig = await getTenantLocaleConfig(env.DB, tenant.tenantId);
+      // Load locale config + check redirects in parallel
+      const [localeConfig, redirect] = await Promise.all([
+        getTenantLocaleConfig(env.DB, tenant.tenantId),
+        checkRedirect(env.DB, tenant.tenantId, pathname),
+      ]);
+
+      // Handle redirect
+      if (redirect) {
+        return new Response(null, {
+          status: redirect.statusCode,
+          headers: { 'Location': redirect.toPath },
+        });
+      }
 
       // Robots.txt
       if (pathname === '/robots.txt') {
@@ -146,46 +157,55 @@ export default {
         });
       }
 
-      // Check redirects
-      const redirect = await checkRedirect(env.DB, tenant.tenantId, pathname);
-      if (redirect) {
-        return new Response(null, {
-          status: redirect.statusCode,
-          headers: { 'Location': redirect.toPath },
-        });
-      }
-
       // Admin SPA
       if (pathname.startsWith('/admin')) {
         return handleAdminRequest(pathname, env, tenant);
       }
 
-      // Load settings
-      const settings = await getSiteSettings(env.DB, tenant.tenantId, tenant.tenantName);
-
-      // Load active ad placements
-      let adSlots: AdSlotConfig | undefined;
-      try {
-        const placements = await getActivePlacements(env.DB, tenant.tenantId);
-        const apiBaseUrl = env.ENVIRONMENT === 'production'
-          ? 'https://api.framevideos.com'
-          : 'https://api-staging.framevideos.com';
-
-        if (placements.header || placements.sidebar || placements.inContent) {
-          adSlots = {
-            tenantId: tenant.tenantId,
-            apiBaseUrl,
-            headerPlacementId: placements.header?.id,
-            sidebarPlacementId: placements.sidebar?.id,
-            inContentPlacementId: placements.inContent?.id,
-          };
-        }
-      } catch {
-        // Never break on ad loading errors
-      }
-
       // Route matching (handles locale prefix)
       const route = matchRoute(pathname);
+
+      // ─── Full-page KV cache (5 min for public pages) ───────────────
+      const isPublicPage = !pathname.startsWith('/admin') && !pathname.startsWith('/advertiser') && request.method === 'GET';
+      const cacheKey = isPublicPage ? `page:${tenant.tenantId}:${pathname}:${request.headers.get('Accept-Language')?.split(',')[0] ?? 'default'}` : null;
+
+      if (cacheKey) {
+        const cachedHtml = await env.CACHE.get(cacheKey);
+        if (cachedHtml) {
+          const response = new Response(cachedHtml, {
+            headers: {
+              'Content-Type': 'text/html;charset=UTF-8',
+              'Cache-Control': 'public, max-age=60, s-maxage=300',
+              'Content-Language': locale,
+              'X-Tenant-Id': tenant.tenantId,
+              'X-Cache': 'HIT',
+            },
+          });
+          addSecurityHeaders(response.headers);
+          return response;
+        }
+      }
+
+      // Load settings + ad placements in parallel (not sequential)
+      const [settings, adPlacements] = await Promise.all([
+        getSiteSettings(env.DB, tenant.tenantId, tenant.tenantName),
+        getActivePlacements(env.DB, tenant.tenantId).catch(() => ({ header: null, sidebar: null, inContent: null })),
+      ]);
+
+      let adSlots: AdSlotConfig | undefined;
+      const apiBaseUrl = env.ENVIRONMENT === 'production'
+        ? 'https://api.framevideos.com'
+        : 'https://api-staging.framevideos.com';
+
+      if (adPlacements.header || adPlacements.sidebar || adPlacements.inContent) {
+        adSlots = {
+          tenantId: tenant.tenantId,
+          apiBaseUrl,
+          headerPlacementId: adPlacements.header?.id,
+          sidebarPlacementId: adPlacements.sidebar?.id,
+          inContentPlacementId: adPlacements.inContent?.id,
+        };
+      }
 
       // Determine locale: route locale > Accept-Language > default
       let locale = localeConfig.defaultLocale;
@@ -282,12 +302,18 @@ export default {
         }));
       }
 
+      // Write to KV cache (non-blocking, 5 min TTL)
+      if (cacheKey && html) {
+        env.CACHE.put(cacheKey, html, { expirationTtl: 300 }).catch(() => {});
+      }
+
       return addSecurityHeaders(new Response(html, {
         status: 200,
         headers: {
           'Content-Type': 'text/html;charset=UTF-8',
           'Cache-Control': 'public, max-age=60, s-maxage=300',
           'X-Tenant-Id': tenant.tenantId,
+          'X-Cache': 'MISS',
           'Content-Language': locale,
           'Vary': 'Accept-Language',
         },
