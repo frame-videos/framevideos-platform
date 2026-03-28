@@ -109,31 +109,51 @@ function AddDomainModal({
           </div>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="Domínio"
-            placeholder="meusitedevideos.com"
-            value={domain}
-            onChange={(e) => setDomain(e.target.value)}
-            error={error}
-            hint="Digite apenas o domínio, sem http:// ou www"
-          />
-
-          <div className="rounded-lg border border-border bg-dark-800/50 p-4 space-y-2">
-            <p className="text-xs font-medium text-dark-300 uppercase tracking-wide">
-              Como funciona
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <p className="text-sm text-dark-300 mb-3">
+              Conecte seu próprio domínio para que seus visitantes acessem seu site por um endereço personalizado.
             </p>
-            <ol className="text-sm text-dark-400 space-y-1 list-decimal list-inside">
-              <li>Adicione seu domínio aqui</li>
-              <li>
-                Configure o DNS do seu domínio (CNAME →{' '}
-                <code className="text-primary-400 bg-dark-700 px-1 rounded">
-                  sites.framevideos.com
-                </code>
-                )
-              </li>
-              <li>Clique em "Verificar DNS" para confirmar</li>
-            </ol>
+            <Input
+              label="Qual é o seu domínio?"
+              placeholder="meusitedevideos.com"
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              error={error}
+              hint="Exemplo: meusitedevideos.com — sem http:// e sem www"
+            />
+          </div>
+
+          <div className="rounded-xl border border-primary-600/20 bg-primary-600/5 p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📋</span>
+              <p className="text-sm font-semibold text-white">
+                Como funciona? É simples!
+              </p>
+            </div>
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary-600/20 text-primary-400 text-xs font-bold shrink-0">1</span>
+                <div>
+                  <p className="text-sm text-white font-medium">Adicione seu domínio aqui</p>
+                  <p className="text-xs text-dark-400">Digite o endereço que você comprou (ex: meusitedevideos.com)</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary-600/20 text-primary-400 text-xs font-bold shrink-0">2</span>
+                <div>
+                  <p className="text-sm text-white font-medium">Configure o apontamento no seu provedor</p>
+                  <p className="text-xs text-dark-400">Vamos te mostrar exatamente o que copiar e colar — leva 2 minutos</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary-600/20 text-primary-400 text-xs font-bold shrink-0">3</span>
+                <div>
+                  <p className="text-sm text-white font-medium">Clique em "Verificar" e pronto!</p>
+                  <p className="text-xs text-dark-400">Confirmamos automaticamente que tudo está certo</p>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="flex gap-3 justify-end pt-2">
@@ -164,70 +184,135 @@ function DnsInstructionsModal({
   if (!addResult) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Configurar DNS" size="lg">
-      <div className="space-y-5">
-        <div className="rounded-lg border border-green-600/30 bg-green-600/10 p-4">
+    <Modal isOpen={isOpen} onClose={onClose} title="🎉 Domínio adicionado!" size="lg">
+      <div className="space-y-6">
+        <div className="rounded-xl border border-green-600/30 bg-green-600/10 p-4">
           <p className="text-sm text-green-300">
-            ✅ Domínio <strong>{addResult.domain}</strong> adicionado com
-            sucesso!
+            ✅ <strong>{addResult.domain}</strong> foi adicionado com sucesso! Agora siga as instruções abaixo para conectá-lo.
           </p>
         </div>
 
-        {/* CNAME Instructions */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-dark-200">
-            Passo 1: Configurar CNAME (obrigatório)
-          </h3>
-          <div className="rounded-lg border border-border bg-dark-800/50 p-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-dark-500 text-xs mb-1">Tipo</p>
-                <p className="text-white font-mono">CNAME</p>
+        {/* Instruções amigáveis */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center justify-center w-8 h-8 rounded-full bg-primary-600/20 text-primary-400 text-sm font-bold">1</span>
+            <h3 className="text-base font-semibold text-white">
+              Acesse o painel do seu domínio
+            </h3>
+          </div>
+          <div className="ml-10 rounded-xl border border-border bg-dark-800/30 p-4">
+            <p className="text-sm text-dark-300 mb-3">
+              Entre no site onde você <strong className="text-white">comprou seu domínio</strong> (exemplos: GoDaddy, Namecheap, Registro.br, Hostgator, Cloudflare) e procure a seção de <strong className="text-white">DNS</strong> ou <strong className="text-white">Zona DNS</strong>.
+            </p>
+            <p className="text-xs text-dark-500">
+              💡 Geralmente fica em: Painel → Domínios → Gerenciar → DNS / Zona DNS / Registros DNS
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center justify-center w-8 h-8 rounded-full bg-primary-600/20 text-primary-400 text-sm font-bold">2</span>
+            <h3 className="text-base font-semibold text-white">
+              Crie um novo registro DNS
+            </h3>
+          </div>
+          <div className="ml-10 rounded-xl border border-border bg-dark-800/30 p-4 space-y-4">
+            <p className="text-sm text-dark-300">
+              Clique em <strong className="text-white">"Adicionar registro"</strong> ou <strong className="text-white">"Add record"</strong> e preencha assim:
+            </p>
+            
+            <div className="rounded-lg bg-dark-900/80 p-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <p className="text-xs text-dark-500 mb-1">📌 Tipo (Type)</p>
+                  <div className="bg-dark-700 rounded-lg px-3 py-2">
+                    <p className="text-white font-mono font-bold text-lg">CNAME</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-dark-500 mb-1">📝 Nome (Host)</p>
+                  <div className="bg-dark-700 rounded-lg px-3 py-2 flex items-center justify-between">
+                    <p className="text-white font-mono font-bold text-lg">@</p>
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard?.writeText('@')}
+                      className="text-dark-400 hover:text-white transition-colors"
+                      title="Copiar"
+                    >
+                      📋
+                    </button>
+                  </div>
+                  <p className="text-xs text-dark-500 mt-1">ou deixe vazio</p>
+                </div>
+                <div>
+                  <p className="text-xs text-dark-500 mb-1">🎯 Destino (Target / Value)</p>
+                  <CopyableField value={addResult.cnameTarget} />
+                </div>
               </div>
-              <div>
-                <p className="text-dark-500 text-xs mb-1">Nome / Host</p>
-                <p className="text-white font-mono">@ ou {addResult.domain}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-dark-500 text-xs mb-1">Destino / Target</p>
-                <CopyableField value={addResult.cnameTarget} />
-              </div>
+            </div>
+
+            <div className="rounded-lg border border-blue-600/20 bg-blue-600/5 p-3">
+              <p className="text-xs text-blue-300">
+                💡 <strong>Dica:</strong> Se o seu provedor pedir "TTL", pode deixar o padrão (automático ou 3600).
+                Se não aceitar "@" no campo Nome, tente deixar vazio ou colocar <code className="bg-dark-700 px-1 rounded">{addResult.domain}</code>.
+              </p>
             </div>
           </div>
         </div>
 
-        {/* TXT Instructions */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-dark-200">
-            Passo 2: Verificação TXT (opcional, mais confiável)
-          </h3>
-          <div className="rounded-lg border border-border bg-dark-800/50 p-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center justify-center w-8 h-8 rounded-full bg-primary-600/20 text-primary-400 text-sm font-bold">3</span>
+            <h3 className="text-base font-semibold text-white">
+              Volte aqui e clique em "Verificar DNS"
+            </h3>
+          </div>
+          <div className="ml-10 rounded-xl border border-border bg-dark-800/30 p-4">
+            <p className="text-sm text-dark-300">
+              Depois de salvar o registro DNS, volte para esta página e clique no botão <strong className="text-primary-400">"Verificar DNS"</strong> ao lado do seu domínio.
+            </p>
+            <p className="text-xs text-dark-500 mt-2">
+              ⏱️ <strong>Importante:</strong> Alterações de DNS podem levar de <strong>5 minutos até 24 horas</strong> para funcionar. Se não verificar na primeira tentativa, espere um pouco e tente novamente.
+            </p>
+          </div>
+        </div>
+
+        {/* Verificação alternativa (avançado) */}
+        <details className="group">
+          <summary className="cursor-pointer text-xs text-dark-500 hover:text-dark-300 transition-colors flex items-center gap-1">
+            <span className="group-open:rotate-90 transition-transform">▶</span>
+            Método alternativo (avançado): Verificação via TXT
+          </summary>
+          <div className="mt-3 ml-4 rounded-lg border border-border bg-dark-800/30 p-4 space-y-3">
+            <p className="text-xs text-dark-400">
+              Se preferir, você pode verificar seu domínio criando um registro TXT em vez do CNAME:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <p className="text-dark-500 text-xs mb-1">Tipo</p>
-                <p className="text-white font-mono">TXT</p>
-              </div>
-              <div>
-                <p className="text-dark-500 text-xs mb-1">Nome / Host</p>
+                <p className="text-xs text-dark-500 mb-1">Nome / Host</p>
                 <CopyableField value={addResult.txtRecord.host} />
               </div>
-              <div className="col-span-2">
-                <p className="text-dark-500 text-xs mb-1">Valor</p>
+              <div>
+                <p className="text-xs text-dark-500 mb-1">Valor</p>
                 <CopyableField value={addResult.txtRecord.value} />
               </div>
             </div>
           </div>
-        </div>
+        </details>
 
         {/* SSL Note */}
-        <div className="rounded-lg border border-yellow-600/30 bg-yellow-600/10 p-4">
-          <p className="text-xs text-yellow-300/90">
-            <strong>⚠️ Sobre SSL:</strong> {addResult.instructions.sslNote}
+        <div className="rounded-xl border border-yellow-600/20 bg-yellow-600/5 p-4">
+          <p className="text-sm text-yellow-300/90">
+            <strong>🔒 Sobre o cadeado de segurança (SSL):</strong>
+          </p>
+          <p className="text-xs text-yellow-300/70 mt-1">
+            Para que seu site tenha o cadeado de segurança (HTTPS), recomendamos usar o <strong>Cloudflare</strong> (gratuito) como provedor DNS do seu domínio. Subdomínios <code className="bg-dark-700 px-1 rounded">.framevideos.com</code> já possuem SSL automático.
           </p>
         </div>
 
         <div className="flex justify-end pt-2">
-          <Button onClick={onClose}>Entendi, vou configurar</Button>
+          <Button onClick={onClose}>✅ Entendi, vou configurar!</Button>
         </div>
       </div>
     </Modal>
@@ -255,63 +340,76 @@ function VerifyResultModal({
       onClose={onClose}
       title={result.verified ? 'Domínio Verificado!' : 'Verificação Pendente'}
     >
-      <div className="space-y-4">
+      <div className="space-y-5">
         {result.verified ? (
           <>
-            <div className="rounded-lg border border-green-600/30 bg-green-600/10 p-4">
+            <div className="text-center py-4">
+              <span className="text-5xl">🎉</span>
+              <h3 className="text-xl font-bold text-white mt-3">Tudo certo!</h3>
+              <p className="text-sm text-dark-300 mt-2">
+                O domínio <strong className="text-primary-400">{domainName}</strong> foi conectado com sucesso ao seu site!
+              </p>
+            </div>
+            <div className="rounded-xl border border-green-600/30 bg-green-600/10 p-4">
               <p className="text-sm text-green-300">
-                🎉 <strong>{domainName}</strong> foi verificado com sucesso via{' '}
-                {result.method === 'cname' ? 'CNAME' : 'registro TXT'}!
+                ✅ Seu site agora está acessível em <strong>https://{domainName}</strong>
               </p>
             </div>
             {result.sslNote && (
-              <div className="rounded-lg border border-yellow-600/30 bg-yellow-600/10 p-4">
-                <p className="text-xs text-yellow-300/90">
-                  <strong>SSL:</strong> {result.sslNote}
+              <div className="rounded-xl border border-yellow-600/20 bg-yellow-600/5 p-3">
+                <p className="text-xs text-yellow-300/80">
+                  🔒 {result.sslNote}
                 </p>
               </div>
             )}
           </>
         ) : (
           <>
-            <div className="rounded-lg border border-red-600/30 bg-red-600/10 p-4">
-              <p className="text-sm text-red-300">
-                ❌ DNS ainda não configurado para <strong>{domainName}</strong>
-              </p>
+            <div className="text-center py-2">
+              <span className="text-4xl">⏳</span>
+              <h3 className="text-lg font-bold text-white mt-2">Ainda não detectamos a configuração</h3>
             </div>
 
-            {result.cnameCheck && (
-              <div className="text-sm space-y-1">
-                <p className="text-dark-300">
-                  <strong>CNAME esperado:</strong>{' '}
-                  <code className="text-primary-400">{result.cnameCheck.expected}</code>
-                </p>
-                <p className="text-dark-400">
-                  <strong>CNAME encontrado:</strong>{' '}
-                  {result.cnameCheck.found ? (
-                    <code className="text-red-400">{result.cnameCheck.found}</code>
-                  ) : (
-                    <span className="text-dark-500">nenhum</span>
-                  )}
-                </p>
-              </div>
-            )}
+            <div className="rounded-xl border border-orange-600/20 bg-orange-600/5 p-4 space-y-3">
+              <p className="text-sm text-dark-300">
+                Não se preocupe! Isso pode acontecer por dois motivos:
+              </p>
+              <ul className="space-y-2 text-sm text-dark-400">
+                <li className="flex gap-2">
+                  <span>⏱️</span>
+                  <span><strong className="text-white">O DNS ainda está propagando</strong> — alterações podem levar de 5 minutos a 24 horas. Tente novamente em alguns minutos.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span>⚙️</span>
+                  <span><strong className="text-white">O registro não foi criado ainda</strong> — acesse o painel do seu provedor de domínio e crie o registro conforme as instruções.</span>
+                </li>
+              </ul>
+            </div>
 
-            {result.instructions && (
-              <div className="rounded-lg border border-border bg-dark-800/50 p-4 space-y-2">
-                <p className="text-xs font-medium text-dark-300">Instruções:</p>
-                <p className="text-sm text-dark-400">{result.instructions.option1}</p>
-                <p className="text-sm text-dark-400">{result.instructions.option2}</p>
-                <p className="text-xs text-dark-500 mt-2 italic">
-                  {result.instructions.note}
-                </p>
+            <div className="rounded-xl border border-border bg-dark-800/30 p-4">
+              <p className="text-sm font-medium text-white mb-2">📋 Lembrete: o que você precisa configurar</p>
+              <div className="rounded-lg bg-dark-900/80 p-3">
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <p className="text-xs text-dark-500">Tipo</p>
+                    <p className="text-white font-mono font-bold">CNAME</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-dark-500">Nome</p>
+                    <p className="text-white font-mono font-bold">@</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-dark-500">Destino</p>
+                    <p className="text-primary-400 font-mono text-xs break-all">{result.cnameCheck?.expected || 'sites.framevideos.com'}</p>
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
           </>
         )}
 
         <div className="flex justify-end">
-          <Button onClick={onClose}>Fechar</Button>
+          <Button onClick={onClose}>{result.verified ? '🎉 Fechar' : 'Entendi, vou tentar novamente'}</Button>
         </div>
       </div>
     </Modal>
@@ -475,16 +573,31 @@ function DomainCard({
         </div>
       </div>
 
-      {/* CNAME instructions for pending domains */}
+      {/* Instructions for pending domains */}
       {domain.status === 'pending_verification' && (
-        <div className="mt-4 rounded-lg border border-yellow-600/20 bg-yellow-600/5 p-3">
-          <p className="text-xs text-yellow-300/80">
-            📋 Configure um registro <strong>CNAME</strong> no DNS do seu domínio
-            apontando para{' '}
-            <code className="bg-dark-700 px-1 rounded text-primary-400">
-              sites.framevideos.com
-            </code>{' '}
-            e depois clique em "Verificar DNS".
+        <div className="mt-4 rounded-lg border border-yellow-600/20 bg-yellow-600/5 p-4 space-y-2">
+          <p className="text-sm text-yellow-300/90 font-medium">
+            ⏳ Aguardando configuração
+          </p>
+          <p className="text-xs text-dark-400">
+            Acesse o painel do seu provedor de domínio (onde você comprou o domínio) e crie um registro DNS com estas informações:
+          </p>
+          <div className="rounded-lg bg-dark-900/60 p-3 grid grid-cols-3 gap-2">
+            <div>
+              <p className="text-xs text-dark-500">Tipo</p>
+              <p className="text-white font-mono font-bold text-sm">CNAME</p>
+            </div>
+            <div>
+              <p className="text-xs text-dark-500">Nome</p>
+              <p className="text-white font-mono font-bold text-sm">@</p>
+            </div>
+            <div>
+              <p className="text-xs text-dark-500">Destino</p>
+              <CopyableField value="sites.framevideos.com" />
+            </div>
+          </div>
+          <p className="text-xs text-dark-500">
+            Depois de configurar, clique em <strong className="text-primary-400">"🔍 Verificar DNS"</strong> acima.
           </p>
         </div>
       )}
@@ -721,17 +834,19 @@ export function Sites() {
         </div>
       )}
 
-      {/* SSL Limitation Notice */}
-      <div className="rounded-lg border border-dark-600/50 bg-dark-800/30 p-4">
-        <p className="text-xs text-dark-500">
-          <strong className="text-dark-400">ℹ️ Sobre SSL em domínios personalizados:</strong>{' '}
-          Para que seu domínio tenha certificado SSL (HTTPS) automático,
-          recomendamos usar o Cloudflare (plano gratuito) como provedor DNS do
-          seu domínio. Sem isso, o acesso será feito apenas via HTTP ou você
-          precisará configurar o SSL manualmente. Subdomínios{' '}
-          <code className="text-dark-400">.framevideos.com</code> já possuem SSL
-          automático.
-        </p>
+      {/* SSL Info */}
+      <div className="rounded-xl border border-dark-600/30 bg-dark-800/20 p-5">
+        <div className="flex items-start gap-3">
+          <span className="text-lg">🔒</span>
+          <div>
+            <p className="text-sm font-medium text-dark-300 mb-1">
+              Sobre o cadeado de segurança (HTTPS)
+            </p>
+            <p className="text-xs text-dark-500 leading-relaxed">
+              Para que seu domínio personalizado tenha o cadeado de segurança (HTTPS), recomendamos usar o <strong className="text-dark-400">Cloudflare</strong> como provedor DNS do seu domínio — é gratuito e leva 5 minutos para configurar. Subdomínios <code className="text-dark-400">.framevideos.com</code> já possuem HTTPS automático.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Modals */}
