@@ -556,4 +556,96 @@ admin.get('/stats', async (c) => {
   });
 });
 
+// ─── Test Proxy ──────────────────────────────────────────────────────────────
+
+admin.post('/test-proxy', async (c) => {
+  const body = await c.req.json() as { proxyUrl: string; testUrl: string };
+  if (!body.proxyUrl || !body.testUrl) {
+    throw new ValidationError('proxyUrl e testUrl são obrigatórios');
+  }
+
+  const start = Date.now();
+  try {
+    const encodedTarget = encodeURIComponent(body.testUrl);
+    const fetchUrl = body.proxyUrl.replace('{url}', encodedTarget);
+
+    const response = await fetch(fetchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html',
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+      },
+    });
+
+    const html = await response.text();
+    const latency = Date.now() - start;
+    const hasContent = html.length > 500;
+    const hasVideoLinks = html.includes('/video') || html.includes('thumb-block');
+
+    if (!hasContent) {
+      return c.json({
+        success: false,
+        message: `Resposta muito curta (${html.length} bytes). Proxy pode não estar funcionando.`,
+        latencyMs: latency,
+        bodyLength: html.length,
+      });
+    }
+
+    return c.json({
+      success: true,
+      message: `✅ Proxy OK! ${html.length.toLocaleString()} bytes em ${latency}ms${hasVideoLinks ? ' — links de vídeo encontrados' : ''}`,
+      latencyMs: latency,
+      bodyLength: html.length,
+      hasVideoLinks,
+    });
+  } catch (err) {
+    const latency = Date.now() - start;
+    return c.json({
+      success: false,
+      message: `Erro: ${err instanceof Error ? err.message : 'Falha na conexão'}`,
+      latencyMs: latency,
+    });
+  }
+});
+
+// ─── Platform Config (key-value) ─────────────────────────────────────────────
+
+admin.get('/platform-config', async (c) => {
+  const db = new D1Client(c.env.DB);
+  const rows = await db.query<{ key: string; value: string; description: string | null; updated_at: string }>(
+    'SELECT key, value, description, updated_at FROM platform_config ORDER BY key',
+    [],
+  );
+  return c.json({ data: rows });
+});
+
+admin.get('/platform-config/:key', async (c) => {
+  const db = new D1Client(c.env.DB);
+  const key = c.req.param('key');
+  const row = await db.queryOne<{ key: string; value: string; description: string | null; updated_at: string }>(
+    'SELECT key, value, description, updated_at FROM platform_config WHERE key = ?',
+    [key],
+  );
+  if (!row) throw new NotFoundError('Configuração não encontrada');
+  return c.json({ data: row });
+});
+
+admin.put('/platform-config', async (c) => {
+  const db = new D1Client(c.env.DB);
+  const body = await c.req.json() as { configs: Array<{ key: string; value: string }> };
+
+  if (!body.configs?.length) {
+    throw new ValidationError('Pelo menos uma configuração é necessária');
+  }
+
+  const statements = body.configs.map((cfg) => ({
+    sql: `UPDATE platform_config SET value = ?, updated_at = datetime('now') WHERE key = ?`,
+    params: [cfg.value, cfg.key],
+  }));
+
+  await db.batch(statements);
+
+  return c.json({ success: true, updated: body.configs.length });
+});
+
 export { admin };

@@ -437,6 +437,24 @@ export async function executeCrawl(
 
     const selectors: CrawlSelectors = JSON.parse(source.config_json);
 
+    // Resolve proxy: platform_config (global) > selectors.proxyUrl (per-source) > none
+    let resolvedProxyUrl = selectors.proxyUrl || '';
+    try {
+      const proxyEnabled = await db.queryOne<{ value: string }>(
+        "SELECT value FROM platform_config WHERE key = 'crawler_proxy_enabled'", [],
+      );
+      if (proxyEnabled?.value === 'true') {
+        const proxyUrlRow = await db.queryOne<{ value: string }>(
+          "SELECT value FROM platform_config WHERE key = 'crawler_proxy_url'", [],
+        );
+        if (proxyUrlRow?.value) {
+          resolvedProxyUrl = proxyUrlRow.value;
+        }
+      }
+    } catch {
+      // platform_config table might not exist yet — ignore
+    }
+
     // Fetch source URL (with optional proxy support)
     let html: string;
     try {
@@ -447,11 +465,11 @@ export async function executeCrawl(
         'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
       };
 
-      // If proxy is configured, route through it
-      if (selectors.proxyUrl) {
+      // If proxy is configured (global or per-source), route through it
+      if (resolvedProxyUrl) {
         const encodedTarget = encodeURIComponent(source.base_url);
-        fetchUrl = selectors.proxyUrl.replace('{url}', encodedTarget);
-        console.log(`[crawler] Using proxy: ${selectors.proxyUrl.split('?')[0]}...`);
+        fetchUrl = resolvedProxyUrl.replace('{url}', encodedTarget);
+        console.log(`[crawler] Using proxy: ${resolvedProxyUrl.split('?')[0]}...`);
       }
 
       const response = await fetch(fetchUrl, {
