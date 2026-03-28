@@ -79,7 +79,7 @@ crawler.post('/sources', async (c) => {
   const id = generateUlid();
 
   await db.execute(
-    `INSERT INTO crawler_sources (id, tenant_id, name, url, selectors, schedule, active)
+    `INSERT INTO crawler_sources (id, tenant_id, name, base_url, config_json, crawler_type, is_active)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [id, tenantId, data.name, data.url, JSON.stringify(data.selectors), data.schedule, data.active ? 1 : 0],
   );
@@ -100,11 +100,11 @@ crawler.get('/sources', async (c) => {
   const total = countResult?.total ?? 0;
 
   const sources = await db.query<{
-    id: string; name: string; url: string; selectors: string;
-    schedule: string; active: number; last_run_at: string | null;
+    id: string; name: string; base_url: string; config_json: string;
+    crawler_type: string; is_active: number; last_run_at: string | null;
     created_at: string; updated_at: string;
   }>(
-    `SELECT id, name, url, selectors, schedule, active, last_run_at, created_at, updated_at
+    `SELECT id, name, base_url, config_json, crawler_type, is_active, last_run_at, created_at, updated_at
      FROM crawler_sources
      WHERE tenant_id = ?
      ORDER BY created_at DESC
@@ -118,9 +118,9 @@ crawler.get('/sources', async (c) => {
 
   if (sourceIds.length > 0) {
     const runs = await db.query<{
-      source_id: string; status: string; videos_found: number; videos_new: number;
+      source_id: string; status: string; videos_found: number; videos_imported: number;
     }>(
-      `SELECT cr.source_id, cr.status, cr.videos_found, cr.videos_new
+      `SELECT cr.source_id, cr.status, cr.videos_found, cr.videos_imported
        FROM crawler_runs cr
        INNER JOIN (
          SELECT source_id, MAX(started_at) as max_started
@@ -135,7 +135,7 @@ crawler.get('/sources', async (c) => {
       lastRuns[run.source_id] = {
         status: run.status,
         videos_found: run.videos_found,
-        videos_new: run.videos_new,
+        videos_new: run.videos_imported,
       };
     }
   }
@@ -144,10 +144,10 @@ crawler.get('/sources', async (c) => {
     data: sources.map((s) => ({
       id: s.id,
       name: s.name,
-      url: s.url,
-      selectors: JSON.parse(s.selectors || '{}'),
-      schedule: s.schedule,
-      active: s.active === 1,
+      url: s.base_url,
+      selectors: JSON.parse(s.config_json || '{}'),
+      schedule: s.crawler_type,
+      active: s.is_active === 1,
       lastRunAt: s.last_run_at,
       lastRun: lastRuns[s.id] ?? null,
       createdAt: s.created_at,
@@ -189,10 +189,10 @@ crawler.put('/sources/:id', async (c) => {
   const params: unknown[] = [];
 
   if (data.name !== undefined) { updates.push('name = ?'); params.push(data.name); }
-  if (data.url !== undefined) { updates.push('url = ?'); params.push(data.url); }
-  if (data.selectors !== undefined) { updates.push('selectors = ?'); params.push(JSON.stringify(data.selectors)); }
-  if (data.schedule !== undefined) { updates.push('schedule = ?'); params.push(data.schedule); }
-  if (data.active !== undefined) { updates.push('active = ?'); params.push(data.active ? 1 : 0); }
+  if (data.url !== undefined) { updates.push('base_url = ?'); params.push(data.url); }
+  if (data.selectors !== undefined) { updates.push('config_json = ?'); params.push(JSON.stringify(data.selectors)); }
+  if (data.schedule !== undefined) { updates.push('crawler_type = ?'); params.push(data.schedule); }
+  if (data.active !== undefined) { updates.push('is_active = ?'); params.push(data.active ? 1 : 0); }
 
   if (updates.length > 0) {
     updates.push("updated_at = datetime('now')");
@@ -235,8 +235,8 @@ crawler.post('/sources/:id/run', async (c) => {
   const sourceId = c.req.param('id');
   const db = new D1Client(c.env.DB);
 
-  const source = await db.queryOne<{ id: string; active: number }>(
-    'SELECT id, active FROM crawler_sources WHERE id = ? AND tenant_id = ?',
+  const source = await db.queryOne<{ id: string; is_active: number }>(
+    'SELECT id, is_active FROM crawler_sources WHERE id = ? AND tenant_id = ?',
     [sourceId, tenantId],
   );
   if (!source) throw new NotFoundError('Crawler Source', sourceId);
@@ -275,12 +275,12 @@ crawler.get('/runs', async (c) => {
 
   const runs = await db.query<{
     id: string; source_id: string; status: string;
-    videos_found: number; videos_new: number; videos_duplicate: number;
-    errors: string; started_at: string; completed_at: string | null;
+    videos_found: number; videos_imported: number;
+    log_json: string; started_at: string; completed_at: string | null;
     source_name: string | null;
   }>(
-    `SELECT cr.id, cr.source_id, cr.status, cr.videos_found, cr.videos_new,
-            cr.videos_duplicate, cr.errors, cr.started_at, cr.completed_at,
+    `SELECT cr.id, cr.source_id, cr.status, cr.videos_found, cr.videos_imported,
+            cr.videos_duplicate, cr.log_json, cr.started_at, cr.completed_at,
             cs.name as source_name
      FROM crawler_runs cr
      LEFT JOIN crawler_sources cs ON cs.id = cr.source_id
@@ -297,9 +297,9 @@ crawler.get('/runs', async (c) => {
       sourceName: r.source_name,
       status: r.status,
       videosFound: r.videos_found,
-      videosNew: r.videos_new,
-      videosDuplicate: r.videos_duplicate,
-      errors: JSON.parse(r.errors || '[]'),
+      videosNew: r.videos_imported,
+      videosDuplicate: (r.videos_found ?? 0) - (r.videos_imported ?? 0),
+      errors: JSON.parse(r.log_json || '[]'),
       startedAt: r.started_at,
       completedAt: r.completed_at,
     })),
@@ -320,13 +320,13 @@ crawler.get('/runs/:id', async (c) => {
 
   const run = await db.queryOne<{
     id: string; source_id: string; status: string;
-    videos_found: number; videos_new: number; videos_duplicate: number;
-    errors: string; started_at: string; completed_at: string | null;
+    videos_found: number; videos_imported: number;
+    log_json: string; started_at: string; completed_at: string | null;
     source_name: string | null; source_url: string | null;
   }>(
-    `SELECT cr.id, cr.source_id, cr.status, cr.videos_found, cr.videos_new,
-            cr.videos_duplicate, cr.errors, cr.started_at, cr.completed_at,
-            cs.name as source_name, cs.url as source_url
+    `SELECT cr.id, cr.source_id, cr.status, cr.videos_found, cr.videos_imported,
+            cr.videos_duplicate, cr.log_json, cr.started_at, cr.completed_at,
+            cs.name as source_name, cs.base_url as source_url
      FROM crawler_runs cr
      LEFT JOIN crawler_sources cs ON cs.id = cr.source_id
      WHERE cr.id = ? AND cr.tenant_id = ?`,

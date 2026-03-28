@@ -411,9 +411,9 @@ export async function executeCrawl(
   try {
     // Get source config
     const source = await db.queryOne<{
-      url: string; selectors: string; name: string;
+      base_url: string; config_json: string; name: string;
     }>(
-      'SELECT url, selectors, name FROM crawler_sources WHERE id = ? AND tenant_id = ?',
+      'SELECT base_url, config_json, name FROM crawler_sources WHERE id = ? AND tenant_id = ?',
       [sourceId, tenantId],
     );
 
@@ -421,12 +421,12 @@ export async function executeCrawl(
       throw new Error(`Source ${sourceId} not found`);
     }
 
-    const selectors: CrawlSelectors = JSON.parse(source.selectors);
+    const selectors: CrawlSelectors = JSON.parse(source.config_json);
 
     // Fetch source URL
     let html: string;
     try {
-      const response = await fetch(source.url, {
+      const response = await fetch(source.base_url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; FrameVideos-Crawler/1.0)',
           'Accept': 'text/html,application/xhtml+xml',
@@ -488,7 +488,7 @@ export async function executeCrawl(
           {
             sql: `INSERT INTO videos (id, tenant_id, slug, status, thumbnail_url, source_url, duration_seconds)
                   VALUES (?, ?, ?, 'draft', ?, ?, ?)`,
-            params: [videoId, tenantId, slug, video.thumbnailUrl || null, video.url, durationSeconds],
+            params: [videoId, tenantId, slug, video.thumbnailUrl || null, video.base_url, durationSeconds],
           },
           {
             sql: `INSERT INTO video_translations (id, video_id, locale, title, description)
@@ -534,13 +534,13 @@ export async function executeCrawl(
     // Update run record
     await db.execute(
       `UPDATE crawler_runs
-       SET status = 'completed', videos_found = ?, videos_new = ?, videos_duplicate = ?,
-           errors = ?, completed_at = ?
+       SET status = 'completed', videos_found = ?, videos_imported = ?,
+           errors_count = ?, log_json = ?, completed_at = ?
        WHERE id = ?`,
       [
         videoLinks.length,
         newVideos.length,
-        duplicateVideos.length,
+        errors.length,
         JSON.stringify(errors),
         completedAt,
         runId,
@@ -571,9 +571,9 @@ export async function executeCrawl(
     // Update run as failed
     await db.execute(
       `UPDATE crawler_runs
-       SET status = 'failed', errors = ?, completed_at = ?
+       SET status = 'failed', errors_count = ?, log_json = ?, completed_at = ?
        WHERE id = ?`,
-      [JSON.stringify(errors), completedAt, runId],
+      [errors.length, JSON.stringify(errors), completedAt, runId],
     );
 
     return {
