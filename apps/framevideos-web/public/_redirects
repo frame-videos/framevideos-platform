@@ -1,0 +1,2 @@
+# Redirect pages.dev para domínio principal
+https://framevideos-web.pages.dev/* https://framevideos.com/:splat 301
