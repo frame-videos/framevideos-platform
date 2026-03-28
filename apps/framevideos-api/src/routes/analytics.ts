@@ -7,6 +7,7 @@ import type { AppContext } from '../env.js';
 import { D1Client } from '@frame-videos/db';
 import { authMiddleware } from '@frame-videos/auth';
 import { generateUlid } from '@frame-videos/shared/utils';
+import { trackRateLimit } from '../middleware/rate-limit.js';
 
 const analytics = new Hono<AppContext>();
 
@@ -31,7 +32,7 @@ function detectDeviceType(ua: string): string {
 
 // ─── POST /track — Public (no auth) ─────────────────────────────────────────
 
-analytics.post('/track', async (c) => {
+analytics.post('/track', trackRateLimit, async (c) => {
   try {
     const body = await c.req.json();
     const parsed = trackSchema.safeParse(body);

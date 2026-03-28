@@ -25,6 +25,7 @@ import {
   NotFoundError,
 } from '@frame-videos/shared/errors';
 import { SYSTEM_LIMITS } from '@frame-videos/shared/constants';
+import { loginRateLimit, signupRateLimit } from '../middleware/rate-limit.js';
 
 const auth = new Hono<AppContext>();
 
@@ -51,7 +52,7 @@ const refreshSchema = z.object({
 
 // ─── POST /signup ────────────────────────────────────────────────────────────
 
-auth.post('/signup', async (c) => {
+auth.post('/signup', signupRateLimit, async (c) => {
   const body = await c.req.json();
   const parsed = signupSchema.safeParse(body);
 
@@ -170,7 +171,7 @@ auth.post('/signup', async (c) => {
 
 // ─── POST /login ─────────────────────────────────────────────────────────────
 
-auth.post('/login', async (c) => {
+auth.post('/login', loginRateLimit, async (c) => {
   const body = await c.req.json();
   const parsed = loginSchema.safeParse(body);
 

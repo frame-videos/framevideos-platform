@@ -8,6 +8,7 @@ import { D1Client } from '@frame-videos/db';
 import { authMiddleware } from '@frame-videos/auth';
 import { generateUlid } from '@frame-videos/shared/utils';
 import { ValidationError, NotFoundError, ConflictError } from '@frame-videos/shared/errors';
+import { subscribeRateLimit } from '../middleware/rate-limit.js';
 
 const newsletter = new Hono<AppContext>();
 
@@ -38,7 +39,7 @@ function generateToken(): string {
 
 // ─── POST /subscribe — Public (no auth) ──────────────────────────────────────
 
-newsletter.post('/subscribe', async (c) => {
+newsletter.post('/subscribe', subscribeRateLimit, async (c) => {
   const body = await c.req.json();
   const parsed = subscribeSchema.safeParse(body);
 
