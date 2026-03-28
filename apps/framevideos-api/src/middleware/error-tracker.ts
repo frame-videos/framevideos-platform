@@ -91,9 +91,7 @@ export function errorTracker(): MiddlewareHandler<AppContext> {
         {
           error: {
             code: 'INTERNAL_ERROR',
-            message: isProduction
-              ? 'An unexpected error occurred'
-              : error.message,
+            message: error.message,
             requestId,
           },
         },
