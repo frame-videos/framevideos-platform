@@ -23,6 +23,7 @@ import { email } from './routes/email.js';
 import { newsletter } from './routes/newsletter.js';
 import { monitoring } from './routes/monitoring.js';
 import { admin } from './routes/admin.js';
+import { security } from './routes/security.js';
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,7 @@ app.route('/api/v1/email', email);
 app.route('/api/v1/newsletter', newsletter);
 app.route('/api/v1/monitoring', monitoring);
 app.route('/api/v1/admin', admin);
+app.route('/api/v1/security', security);
 
 // 404 catch-all
 app.notFound((c) => {
