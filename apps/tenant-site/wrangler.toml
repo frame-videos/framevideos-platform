@@ -14,6 +14,11 @@ database_id = "dae9bd51-c863-42b0-b5b6-21f4569aa6c9"
 binding = "CACHE"
 id = "6be904ed61714310b45e04f7c181f1ba"
 
+# R2 — storage for assets
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "frame-videos-storage"
+
 [vars]
 ENVIRONMENT = "development"
 
@@ -47,3 +52,7 @@ database_id = "dae9bd51-c863-42b0-b5b6-21f4569aa6c9"
 [[env.production.kv_namespaces]]
 binding = "CACHE"
 id = "6be904ed61714310b45e04f7c181f1ba"
+
+[[env.production.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "frame-videos-storage"

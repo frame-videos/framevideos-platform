@@ -8,6 +8,7 @@
 interface Env {
   DB: D1Database;
   CACHE: KVNamespace;
+  STORAGE: R2Bucket;
   ENVIRONMENT: string;
 }
 
@@ -1722,17 +1723,41 @@ export default {
       }
 
       // Admin path → serve admin SPA (handled by separate worker or redirect)
+      // ─── Admin SPA ──────────────────────────────────────────────────────
       if (pathname.startsWith('/admin')) {
+        // Serve admin assets from R2
+        if (pathname.startsWith('/admin/assets/')) {
+          const assetKey = `admin-assets/${pathname.replace('/admin/assets/', '')}`;
+          const obj = await env.STORAGE.get(assetKey);
+          if (obj) {
+            const ext = assetKey.split('.').pop();
+            const contentType = ext === 'js' ? 'application/javascript' : ext === 'css' ? 'text/css' : 'application/octet-stream';
+            return new Response(obj.body, {
+              headers: {
+                'Content-Type': contentType,
+                'Cache-Control': 'public, max-age=31536000, immutable',
+                'Access-Control-Allow-Origin': '*',
+              },
+            });
+          }
+          return new Response('Not found', { status: 404 });
+        }
+
+        // Serve admin SPA index.html for all /admin/* routes
         return new Response(`<!DOCTYPE html>
-<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Painel Admin — ${esc(tenant.tenantName)}</title>
-<script src="https://cdn.tailwindcss.com"></script>
-</head><body class="bg-[#0a0a0f] text-gray-100 min-h-screen flex items-center justify-center">
-<div class="text-center"><p class="text-4xl mb-4">⚙️</p><h1 class="text-2xl font-bold mb-2">Painel Admin</h1>
-<p class="text-gray-500 mb-4">${esc(tenant.tenantName)}</p>
-<p class="text-gray-600 text-sm">O painel de administração será servido como SPA separado.</p>
-<a href="/" class="inline-block mt-4 text-purple-400 hover:text-purple-300">← Voltar ao site</a></div>
-</body></html>`, {
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Admin — ${esc(tenant.tenantName)}</title>
+  <meta name="robots" content="noindex, nofollow">
+  <script type="module" crossorigin src="/admin/assets/index-CLM2aGJk.js"></script>
+  <link rel="stylesheet" crossorigin href="/admin/assets/index-QLKxswdp.css">
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>`, {
           status: 200,
           headers: { 'Content-Type': 'text/html;charset=UTF-8' },
         });
