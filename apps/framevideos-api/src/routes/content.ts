@@ -1130,6 +1130,51 @@ content.post('/tags/bulk', async (c) => {
   return c.json({ created }, 201);
 });
 
+// PUT /content/tags/:id
+content.put('/tags/:id', async (c) => {
+  const tenantId = c.get('tenantId')!;
+  const tagId = c.req.param('id');
+  const db = new D1Client(c.env.DB);
+
+  const existing = await db.queryOne<{ id: string }>(
+    'SELECT id FROM tags WHERE id = ? AND tenant_id = ?',
+    [tagId, tenantId],
+  );
+  if (!existing) throw new NotFoundError('Tag', tagId);
+
+  const body = await c.req.json();
+  const { name, slug } = body as { name?: string; slug?: string };
+
+  const tenant = await db.queryOne<{ default_locale: string }>(
+    'SELECT default_locale FROM tenants WHERE id = ?', [tenantId],
+  );
+  const locale = tenant?.default_locale ?? 'pt_BR';
+  const queries: { sql: string; params: unknown[] }[] = [];
+
+  if (slug) {
+    queries.push({ sql: 'UPDATE tags SET slug = ?, updated_at = datetime(\'now\') WHERE id = ?', params: [slug, tagId] });
+  } else {
+    queries.push({ sql: 'UPDATE tags SET updated_at = datetime(\'now\') WHERE id = ?', params: [tagId] });
+  }
+
+  if (name) {
+    // Upsert translation
+    const existingTrans = await db.queryOne<{ id: string }>(
+      'SELECT id FROM tag_translations WHERE tag_id = ? AND locale = ?',
+      [tagId, locale],
+    );
+    if (existingTrans) {
+      queries.push({ sql: 'UPDATE tag_translations SET name = ? WHERE tag_id = ? AND locale = ?', params: [name.trim(), tagId, locale] });
+    } else {
+      queries.push({ sql: 'INSERT INTO tag_translations (id, tag_id, locale, name) VALUES (?, ?, ?, ?)', params: [generateUlid(), tagId, locale, name.trim()] });
+    }
+  }
+
+  if (queries.length > 0) await db.batch(queries);
+
+  return c.json({ id: tagId, name, slug });
+});
+
 // DELETE /content/tags/:id
 content.delete('/tags/:id', async (c) => {
   const tenantId = c.get('tenantId')!;

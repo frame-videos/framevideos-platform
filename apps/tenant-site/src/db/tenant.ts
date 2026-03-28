@@ -104,14 +104,24 @@ export async function getTenantLocaleConfig(db: D1Database, tenantId: string): P
     "SELECT config_key, config_value FROM tenant_configs WHERE tenant_id = ? AND config_key IN ('default_locale', 'enabled_locales')"
   ).bind(tenantId).all<{ config_key: string; config_value: string }>();
 
+  // Fallback: read default_locale from tenants table
   let defaultLocale = 'pt';
-  let enabledLocales = ['pt'];
+  let enabledLocales: string[] = [];
+  let foundInConfigs = false;
 
   for (const cfg of configs.results) {
-    if (cfg.config_key === 'default_locale') defaultLocale = cfg.config_value;
+    if (cfg.config_key === 'default_locale') { defaultLocale = cfg.config_value; foundInConfigs = true; }
     if (cfg.config_key === 'enabled_locales') {
       try { enabledLocales = JSON.parse(cfg.config_value); } catch { /* ignore */ }
     }
+  }
+
+  // If tenant_configs has no locale, read from tenants.default_locale
+  if (!foundInConfigs) {
+    const tenant = await db.prepare(
+      'SELECT default_locale FROM tenants WHERE id = ?'
+    ).bind(tenantId).first<{ default_locale: string }>();
+    if (tenant?.default_locale) defaultLocale = tenant.default_locale;
   }
 
   if (enabledLocales.length === 0) enabledLocales = [defaultLocale];
