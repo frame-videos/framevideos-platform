@@ -13,7 +13,9 @@ import type { LlmConfig, LlmProviderName } from '@frame-videos/llm';
 const admin = new Hono<AppContext>();
 
 // Auth + super_admin check
-admin.use('/*', authMiddleware());
+admin.use('/*', async (c, next) => {
+  return authMiddleware(c.env.JWT_SECRET)(c, next);
+});
 admin.use('/*', async (c, next) => {
   const role = c.get('userRole');
   if (role !== 'super_admin') {
