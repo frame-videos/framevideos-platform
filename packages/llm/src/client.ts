@@ -1,4 +1,5 @@
-// LLM Client — supports OpenAI and Anthropic via direct fetch (no SDKs)
+// LLM Client — multi-provider support via direct fetch (no SDKs)
+// Supports: OpenAI, Anthropic, Groq, Together, Mistral, and any OpenAI-compatible endpoint
 // Compatible with Cloudflare Workers runtime
 
 import type { LlmConfig, LlmRequest, LlmResponse } from './types.js';
@@ -41,47 +42,6 @@ function mapFinishReason(reason: string): LlmResponse['finishReason'] {
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function callOpenAI(config: LlmConfig, request: LlmRequest): Promise<LlmResponse> {
-  const body = {
-    model: config.model,
-    messages: request.messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    })),
-    max_tokens: request.maxTokens ?? 2048,
-    temperature: request.temperature ?? 0.7,
-  };
-
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error(`OpenAI API error ${res.status}: ${errBody}`);
-  }
-
-  const data = (await res.json()) as OpenAIResponse;
-  const choice = data.choices[0];
-
-  if (!choice) {
-    throw new Error('OpenAI returned no choices');
-  }
-
-  return {
-    text: choice.message.content,
-    inputTokens: data.usage.prompt_tokens,
-    outputTokens: data.usage.completion_tokens,
-    model: data.model,
-    finishReason: mapFinishReason(choice.finish_reason),
-  };
 }
 
 async function callAnthropic(config: LlmConfig, request: LlmRequest): Promise<LlmResponse> {
@@ -134,13 +94,22 @@ async function callAnthropic(config: LlmConfig, request: LlmRequest): Promise<Ll
   };
 }
 
+/** Default base URLs for known OpenAI-compatible providers */
+const PROVIDER_BASE_URLS: Record<string, string> = {
+  openai: 'https://api.openai.com/v1/chat/completions',
+  groq: 'https://api.groq.com/openai/v1/chat/completions',
+  together: 'https://api.together.xyz/v1/chat/completions',
+  mistral: 'https://api.mistral.ai/v1/chat/completions',
+};
+
 /**
- * Call a custom OpenAI-compatible endpoint.
- * Works with Groq, Together, Mistral, Ollama, vLLM, LiteLLM, etc.
+ * Call an OpenAI-compatible endpoint.
+ * Works with OpenAI, Groq, Together, Mistral, Ollama, vLLM, LiteLLM, custom endpoints, etc.
  */
-async function callCustom(config: LlmConfig, request: LlmRequest): Promise<LlmResponse> {
-  if (!config.baseUrl) {
-    throw new Error('Custom provider requires a baseUrl');
+async function callOpenAICompatible(config: LlmConfig, request: LlmRequest): Promise<LlmResponse> {
+  const url = config.baseUrl || PROVIDER_BASE_URLS[config.provider];
+  if (!url) {
+    throw new Error(`No base URL configured for provider "${config.provider}". Set a custom URL.`);
   }
 
   const body = {
@@ -153,7 +122,11 @@ async function callCustom(config: LlmConfig, request: LlmRequest): Promise<LlmRe
     temperature: request.temperature ?? config.temperature ?? 0.7,
   };
 
-  const res = await fetch(config.baseUrl, {
+  const providerLabel = config.provider === 'custom'
+    ? (config.providerName || 'Custom')
+    : config.provider;
+
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -164,14 +137,14 @@ async function callCustom(config: LlmConfig, request: LlmRequest): Promise<LlmRe
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`Custom LLM API error ${res.status}: ${errBody}`);
+    throw new Error(`${providerLabel} API error ${res.status}: ${errBody}`);
   }
 
   const data = (await res.json()) as OpenAIResponse;
   const choice = data.choices?.[0];
 
   if (!choice) {
-    throw new Error('Custom LLM returned no choices');
+    throw new Error(`${providerLabel} returned no choices`);
   }
 
   return {
@@ -190,16 +163,11 @@ async function callCustom(config: LlmConfig, request: LlmRequest): Promise<LlmRe
 export async function callLlm(config: LlmConfig, request: LlmRequest): Promise<LlmResponse> {
   let caller: (cfg: LlmConfig, req: LlmRequest) => Promise<LlmResponse>;
 
-  switch (config.provider) {
-    case 'anthropic':
-      caller = callAnthropic;
-      break;
-    case 'custom':
-      caller = callCustom;
-      break;
-    default:
-      caller = callOpenAI;
-      break;
+  // Anthropic has its own message format; everything else is OpenAI-compatible
+  if (config.provider === 'anthropic') {
+    caller = callAnthropic;
+  } else {
+    caller = callOpenAICompatible;
   }
 
   let lastError: Error | null = null;

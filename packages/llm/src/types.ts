@@ -1,6 +1,6 @@
 // Types for the LLM module
 
-export type LlmProviderName = 'openai' | 'anthropic' | 'custom';
+export type LlmProviderName = 'openai' | 'anthropic' | 'groq' | 'together' | 'mistral' | 'custom';
 
 export interface LlmConfig {
   provider: LlmProviderName;

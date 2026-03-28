@@ -205,12 +205,6 @@ export function AdminCredits() {
     setShowConfigModal(true);
   };
 
-  // Resolve the effective provider type for the API (openai/anthropic/custom)
-  const getEffectiveProvider = (presetId: string): string => {
-    if (presetId === 'openai' || presetId === 'anthropic') return presetId;
-    return 'custom'; // groq, together, mistral, custom all use OpenAI-compatible format
-  };
-
   const handleProviderChange = (presetId: string) => {
     setCfgProvider(presetId);
     const preset = PROVIDER_PRESETS.find((p) => p.id === presetId);
@@ -228,12 +222,11 @@ export function AdminCredits() {
     setTesting(true);
     setTestResult(null);
     try {
-      const effectiveProvider = getEffectiveProvider(cfgProvider);
       const res = await fetch('/api/v1/admin/llm-config/test', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({
-          provider: effectiveProvider,
+          provider: cfgProvider,
           api_key: cfgApiKey.startsWith('••••') ? '' : cfgApiKey,
           model: cfgModel,
           base_url: cfgBaseUrl || undefined,
@@ -252,13 +245,12 @@ export function AdminCredits() {
     e.preventDefault();
     setSaving(true);
     try {
-      const effectiveProvider = getEffectiveProvider(cfgProvider);
       await fetch('/api/v1/admin/llm-config', {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify({
           markup_percent: parseInt(cfgMarkup),
-          provider: effectiveProvider,
+          provider: cfgProvider,
           model: cfgModel,
           api_key: cfgApiKey,
           base_url: cfgBaseUrl,
