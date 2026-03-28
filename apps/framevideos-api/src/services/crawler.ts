@@ -568,11 +568,20 @@ export async function executeCrawl(
         }
         const durationSeconds = parseDuration(video.duration);
 
+        // Generate embed_url and video_url from source URL
+        let embedUrl: string | null = null;
+        let videoUrl: string | null = null;
+        const xvMatch = video.url.match(/xvideos\.com\/video\.([a-z0-9]+)/i);
+        if (xvMatch) {
+          embedUrl = `https://www.xvideos.com/embedframe/${xvMatch[1]}`;
+          videoUrl = video.url;
+        }
+
         await db.batch([
           {
-            sql: `INSERT INTO videos (id, tenant_id, slug, status, thumbnail_url, source_url, duration_seconds)
-                  VALUES (?, ?, ?, 'published', ?, ?, ?)`,
-            params: [videoId, tenantId, slug, video.thumbnailUrl || null, video.url, durationSeconds],
+            sql: `INSERT INTO videos (id, tenant_id, slug, status, thumbnail_url, source_url, duration_seconds, embed_url, video_url)
+                  VALUES (?, ?, ?, 'published', ?, ?, ?, ?, ?)`,
+            params: [videoId, tenantId, slug, video.thumbnailUrl || null, video.url, durationSeconds, embedUrl, videoUrl],
           },
           {
             sql: `INSERT INTO video_translations (id, video_id, locale, title, description)

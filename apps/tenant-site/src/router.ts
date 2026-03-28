@@ -53,5 +53,11 @@ export function matchRoute(pathname: string): RouteMatch {
   const pageMatch = path.match(/^\/pages\/([^/]+)$/);
   if (pageMatch) return { handler: 'page', params: { slug: pageMatch[1]! }, locale: detectedLocale };
 
+  // Common static page shortcuts: /about → /pages/about, /terms → /pages/terms, etc.
+  const staticSlugs = ['about', 'terms', 'privacy', 'dmca', 'contact', 'faq', 'help'];
+  if (staticSlugs.includes(path.slice(1))) {
+    return { handler: 'page', params: { slug: path.slice(1) }, locale: detectedLocale };
+  }
+
   return { handler: '404', params: {} };
 }
