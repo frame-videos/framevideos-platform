@@ -23,14 +23,14 @@ export function errorHandler(err: Error, c: Context): Response {
     return c.json(body, err.statusCode as 400 | 401 | 403 | 404 | 409 | 429 | 500);
   }
 
-  // Erro desconhecido — log e retorna 500 genérico
+  // Erro desconhecido — log e retorna 500 com detalhes pra debug
   console.error(`[${requestId ?? 'unknown'}] Unhandled error:`, err.message, err.stack);
 
   return c.json(
     {
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred',
+        message: err.message,
         requestId: requestId ?? null,
       },
     },
