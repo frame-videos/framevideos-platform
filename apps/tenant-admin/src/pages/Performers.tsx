@@ -24,9 +24,18 @@ interface PerformerForm {
   slug: string;
   bio: string;
   avatarUrl: string;
+  locale: string;
 }
 
-const emptyForm: PerformerForm = { name: '', slug: '', bio: '', avatarUrl: '' };
+const emptyForm: PerformerForm = { name: '', slug: '', bio: '', avatarUrl: '', locale: 'pt' };
+
+const SUPPORTED_LOCALES = [
+  { code: 'pt', label: 'Português' }, { code: 'en', label: 'English' }, { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' }, { code: 'de', label: 'Deutsch' }, { code: 'it', label: 'Italiano' },
+  { code: 'ja', label: '日本語' }, { code: 'zh', label: '中文' }, { code: 'ko', label: '한국어' },
+  { code: 'ru', label: 'Русский' }, { code: 'nl', label: 'Nederlands' }, { code: 'pl', label: 'Polski' },
+  { code: 'tr', label: 'Türkçe' }, { code: 'ar', label: 'العربية' },
+];
 
 export function PerformersPage() {
   const [performers, setPerformers] = useState<Performer[]>([]);
@@ -274,6 +283,14 @@ export function PerformersPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="field-locale" className={labelClass}>Idioma *</label>
+                <select id="field-locale" name="locale" value={form.locale} onChange={(e) => setForm((f) => ({ ...f, locale: e.target.value }))} className={inputClass}>
+                  {SUPPORTED_LOCALES.map((loc) => (<option key={loc.code} value={loc.code}>{loc.label}</option>))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Idioma do nome e bio abaixo</p>
+              </div>
+
               <div>
                 <label htmlFor="field-name" className={labelClass}>Nome *</label>
                 <input

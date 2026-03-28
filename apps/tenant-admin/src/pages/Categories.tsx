@@ -1,6 +1,23 @@
-import { useEffect, useState, useCallback } from 'react';
-import { api } from '@/lib/api';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { api, apiUpload } from '@/lib/api';
 import { slugify } from '@/lib/utils';
+
+const SUPPORTED_LOCALES = [
+  { code: 'pt', label: 'Português' },
+  { code: 'en', label: 'English' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'it', label: 'Italiano' },
+  { code: 'ja', label: '日本語' },
+  { code: 'zh', label: '中文' },
+  { code: 'ko', label: '한국어' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'nl', label: 'Nederlands' },
+  { code: 'pl', label: 'Polski' },
+  { code: 'tr', label: 'Türkçe' },
+  { code: 'ar', label: 'العربية' },
+];
 
 interface Category {
   id: string;
@@ -31,9 +48,10 @@ interface CategoryForm {
   slug: string;
   description: string;
   imageUrl: string;
+  locale: string;
 }
 
-const emptyForm: CategoryForm = { name: '', slug: '', description: '', imageUrl: '' };
+const emptyForm: CategoryForm = { name: '', slug: '', description: '', imageUrl: '', locale: 'pt' };
 
 /** Build a tree structure from flat categories */
 function buildCategoryTree(categories: Category[]): TreeCategory[] {
@@ -96,6 +114,8 @@ export function CategoriesPage() {
   const [slugManual, setSlugManual] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadCategories = useCallback(async (page = 1) => {
     setLoading(true);
@@ -165,6 +185,7 @@ export function CategoriesPage() {
         slug: form.slug,
         description: form.description || undefined,
         imageUrl: form.imageUrl || undefined,
+        locale: form.locale,
       };
 
       if (editingId) {
@@ -440,6 +461,22 @@ export function CategoriesPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
+                <label htmlFor="field-locale" className={labelClass}>Idioma *</label>
+                <select
+                  id="field-locale"
+                  name="locale"
+                  value={form.locale}
+                  onChange={(e) => setForm((f) => ({ ...f, locale: e.target.value }))}
+                  className={inputClass}
+                >
+                  {SUPPORTED_LOCALES.map((loc) => (
+                    <option key={loc.code} value={loc.code}>{loc.label}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Idioma do nome e descrição abaixo</p>
+              </div>
+
+              <div>
                 <label htmlFor="field-name" className={labelClass}>Nome *</label>
                 <input
                   id="field-name"
@@ -480,30 +517,69 @@ export function CategoriesPage() {
               </div>
 
               <div>
-                <label htmlFor="field-imageUrl" className={labelClass}>URL da Imagem</label>
-                <input
-                  id="field-imageUrl"
-                  name="imageUrl"
-                  type="url"
-                  value={form.imageUrl}
-                  onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-                  className={inputClass}
-                  placeholder="https://..."
-                />
-                {form.imageUrl && (
-                  <img
-                    src={form.imageUrl}
-                    alt="Preview"
-                    className="mt-2 h-20 rounded object-cover"
-                    onError={(e) => (e.currentTarget.style.display = 'none')}
+                <label className={labelClass}>Imagem</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setUploading(true);
+                      try {
+                        const res = await apiUpload<{ url: string }>('/api/v1/content/upload', file);
+                        setForm((f) => ({ ...f, imageUrl: res.url }));
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Erro no upload');
+                      } finally {
+                        setUploading(false);
+                      }
+                    }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 transition-colors disabled:opacity-50"
+                  >
+                    {uploading ? '⏳ Enviando...' : '📁 Upload Imagem'}
+                  </button>
+                  <span className="text-xs text-gray-500">ou</span>
+                  <input
+                    id="field-imageUrl"
+                    name="imageUrl"
+                    type="url"
+                    value={form.imageUrl}
+                    onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
+                    className={`${inputClass} flex-1`}
+                    placeholder="https://..."
+                  />
+                </div>
+                {form.imageUrl && (
+                  <div className="mt-2 relative inline-block">
+                    <img
+                      src={form.imageUrl}
+                      alt="Preview"
+                      className="h-20 rounded object-cover"
+                      onError={(e) => (e.currentTarget.style.display = 'none')}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, imageUrl: '' }))}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full text-white text-xs flex items-center justify-center hover:bg-red-500"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 )}
               </div>
 
               <div className="flex items-center gap-3 pt-4 border-t border-gray-800">
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || uploading}
                   className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
                 >
                   {saving ? 'Salvando...' : editingId ? 'Atualizar' : 'Criar'}
