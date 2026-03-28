@@ -19,8 +19,8 @@ import {
   generateVideoFAQ,
   translateContent,
   OPERATION_COSTS,
-} from '../llm/index.js';
-import type { LlmConfig, VideoInfo } from '../llm/index.js';
+} from '@frame-videos/llm';
+import type { LlmConfig, VideoInfo } from '@frame-videos/llm';
 import { requireCredits, debitCredits, logLlmUsage } from './credits.js';
 
 const ai = new Hono<AppContext>();
