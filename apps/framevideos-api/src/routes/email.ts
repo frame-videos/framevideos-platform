@@ -171,7 +171,7 @@ email.post('/send', async (c) => {
       },
       body: JSON.stringify({
         personalizations: [{ to: [{ email: to }] }],
-        from: { email: `noreply@framevideos.com`, name: 'Frame Videos' },
+        from: { email: `framevideos@castelodigital.net`, name: 'Frame Videos' },
         subject,
         content: [
           ...(textContent ? [{ type: 'text/plain', value: textContent }] : []),

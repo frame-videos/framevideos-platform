@@ -136,7 +136,7 @@ async function sendWelcomeEmail(
       },
       body: JSON.stringify({
         personalizations: [{ to: [{ email: to }] }],
-        from: { email: 'noreply@framevideos.com', name: 'Frame Videos' },
+        from: { email: 'framevideos@castelodigital.net', name: 'Frame Videos' },
         subject: 'Bem-vindo ao Frame Videos! 🎬',
         content: [
           {
@@ -515,7 +515,7 @@ auth.post('/forgot-password', forgotPasswordRateLimit, async (c) => {
           },
           body: JSON.stringify({
             personalizations: [{ to: [{ email: email.toLowerCase() }] }],
-            from: { email: 'noreply@framevideos.com', name: 'Frame Videos' },
+            from: { email: 'framevideos@castelodigital.net', name: 'Frame Videos' },
             subject: 'Redefinir sua senha — Frame Videos',
             content: [
               {
