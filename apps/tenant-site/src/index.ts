@@ -442,13 +442,13 @@ async function getTagBySlug(db: D1Database, tenantId: string, locale: string, sl
 
 async function getPage(db: D1Database, tenantId: string, locale: string, slug: string) {
   const p = await db.prepare(
-    `SELECT p.slug, pt.title, pt.content
+    `SELECT p.slug, COALESCE(pt.title, p.title, p.slug) as title, COALESCE(pt.content, p.content, '') as content
      FROM pages p
      LEFT JOIN page_translations pt ON pt.page_id = p.id AND pt.locale = ?
      WHERE p.tenant_id = ? AND p.slug = ? AND p.is_published = 1`
-  ).bind(locale, tenantId, slug).first<{ slug: string; title: string | null; content: string | null }>();
+  ).bind(locale, tenantId, slug).first<{ slug: string; title: string; content: string }>();
   if (!p) return null;
-  return { slug: p.slug, title: p.title ?? slug, content: p.content ?? '' };
+  return { slug: p.slug, title: p.title || slug, content: p.content || '' };
 }
 
 // ─── HTML Helpers ────────────────────────────────────────────────────────────
@@ -1296,17 +1296,25 @@ async function renderStaticPage(db: D1Database, tenant: TenantInfo, settings: Si
   const page = await getPage(db, tenant.tenantId, locale, slug);
   if (!page) return null;
 
-  // Simple markdown-ish rendering (paragraphs, bold, italic, links, headers)
-  let html = esc(page.content)
-    .replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold mt-6 mb-2">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-xl font-semibold mt-8 mb-3">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" class="text-purple-400 hover:underline">$1</a>')
-    .replace(/\n\n/g, '</p><p class="mb-4 text-gray-300 leading-relaxed">')
-    .replace(/\n/g, '<br>');
-  html = `<p class="mb-4 text-gray-300 leading-relaxed">${html}</p>`;
+  // Detect if content is already HTML or plain/markdown
+  const isHtml = /<[a-z][\s\S]*>/i.test(page.content);
+  let html: string;
+  if (isHtml) {
+    // Content is already HTML — render as-is (trusted tenant content)
+    html = page.content;
+  } else {
+    // Simple markdown-ish rendering (paragraphs, bold, italic, links, headers)
+    html = esc(page.content)
+      .replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold mt-6 mb-2">$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2 class="text-xl font-semibold mt-8 mb-3">$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" class="text-purple-400 hover:underline">$1</a>')
+      .replace(/\n\n/g, '</p><p class="mb-4 text-gray-300 leading-relaxed">')
+      .replace(/\n/g, '<br>');
+    html = `<p class="mb-4 text-gray-300 leading-relaxed">${html}</p>`;
+  }
 
   const content = `<article class="max-w-3xl mx-auto">
     <h1 class="text-3xl font-bold mb-6">${esc(page.title)}</h1>
