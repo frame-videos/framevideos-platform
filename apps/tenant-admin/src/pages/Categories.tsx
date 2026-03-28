@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api, apiUpload } from '@/lib/api';
 import { slugify } from '@/lib/utils';
+import { TranslationBadges } from '@/components/TranslationBadges';
+import { TranslationModal } from '@/components/TranslationModal';
 
 const SUPPORTED_LOCALES = [
   { code: 'pt', label: 'Português' },
@@ -117,6 +119,12 @@ export function CategoriesPage() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Translation state
+  const [translationsMap, setTranslationsMap] = useState<Record<string, Array<{ locale: string }>>>({});
+  const [transModalOpen, setTransModalOpen] = useState(false);
+  const [transTargetId, setTransTargetId] = useState('');
+  const [transTargetName, setTransTargetName] = useState('');
+
   const loadCategories = useCallback(async (page = 1) => {
     setLoading(true);
     try {
@@ -125,6 +133,15 @@ export function CategoriesPage() {
       );
       setCategories(data.data);
       setPagination(data.pagination);
+
+      // Load translations batch
+      if (data.data.length > 0) {
+        const ids = data.data.map((c) => c.id).join(',');
+        const transData = await api<{ data: Record<string, Array<{ locale: string }>> }>(
+          `/api/v1/content/categories/translations-batch?ids=${ids}`,
+        );
+        setTranslationsMap(transData.data);
+      }
     } catch (err) {
       console.error('Failed to load categories:', err);
     } finally {
@@ -312,6 +329,13 @@ export function CategoriesPage() {
                 {cat.children.length > 0 && (
                   <span className="text-xs text-gray-600">{cat.children.length} sub</span>
                 )}
+                <div className="flex items-center gap-1">
+                  <TranslationBadges
+                    translatedLocales={(translationsMap[cat.id] ?? []).map((t) => t.locale)}
+                    defaultLocale="pt"
+                    compact
+                  />
+                </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     onClick={() => handleReorder(cat.id, 'up')}
@@ -331,6 +355,17 @@ export function CategoriesPage() {
                   </button>
                   <button onClick={() => openEdit(cat)} className="text-xs text-purple-400 hover:text-purple-300 px-1">
                     Editar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTransTargetId(cat.id);
+                      setTransTargetName(cat.name);
+                      setTransModalOpen(true);
+                    }}
+                    className="text-xs text-blue-400 hover:text-blue-300 px-1"
+                    title="Traduzir"
+                  >
+                    🌐
                   </button>
                   <button
                     onClick={() => handleDelete(cat.id)}
@@ -353,6 +388,7 @@ export function CategoriesPage() {
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Categoria</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Slug</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Descrição</th>
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">Idiomas</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Ações</th>
                 </tr>
               </thead>
@@ -393,6 +429,12 @@ export function CategoriesPage() {
                     <td className="px-4 py-3 text-sm text-gray-400 hidden md:table-cell">
                       <span className="truncate block max-w-xs">{cat.description || '—'}</span>
                     </td>
+                    <td className="px-4 py-3 hidden lg:table-cell">
+                      <TranslationBadges
+                        translatedLocales={(translationsMap[cat.id] ?? []).map((t) => t.locale)}
+                        defaultLocale="pt"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <button
@@ -400,6 +442,17 @@ export function CategoriesPage() {
                           className="text-sm text-purple-400 hover:text-purple-300"
                         >
                           Editar
+                        </button>
+                        <button
+                          onClick={() => {
+                            setTransTargetId(cat.id);
+                            setTransTargetName(cat.name);
+                            setTransModalOpen(true);
+                          }}
+                          className="text-sm text-blue-400 hover:text-blue-300"
+                          title="Traduzir"
+                        >
+                          🌐
                         </button>
                         <button
                           onClick={() => handleDelete(cat.id)}
@@ -596,6 +649,18 @@ export function CategoriesPage() {
           </div>
         </div>
       )}
+
+      {/* Translation Modal */}
+      <TranslationModal
+        open={transModalOpen}
+        onClose={() => setTransModalOpen(false)}
+        onSaved={() => loadCategories(pagination.page)}
+        contentType="categories"
+        contentId={transTargetId}
+        existingLocales={(translationsMap[transTargetId] ?? []).map((t) => t.locale)}
+        defaultLocale="pt"
+        itemName={transTargetName}
+      />
     </div>
   );
 }

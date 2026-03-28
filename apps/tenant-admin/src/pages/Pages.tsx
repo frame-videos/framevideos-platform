@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { TranslationBadges } from '@/components/TranslationBadges';
+import { TranslationModal } from '@/components/TranslationModal';
 
 interface Page {
   id: string;
@@ -25,6 +27,12 @@ export function PagesPage() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // Translation state
+  const [translationsMap, setTranslationsMap] = useState<Record<string, Array<{ locale: string }>>>({});
+  const [transModalOpen, setTransModalOpen] = useState(false);
+  const [transTargetId, setTransTargetId] = useState('');
+  const [transTargetName, setTransTargetName] = useState('');
+
   const loadPages = useCallback(async (page = 1) => {
     setLoading(true);
     try {
@@ -36,6 +44,16 @@ export function PagesPage() {
         setPagination(data.pagination);
       } else {
         setPagination({ page: 1, limit: 24, total: (data.data ?? []).length, totalPages: 1 });
+      }
+
+      // Load translations batch
+      const items = data.data ?? [];
+      if (items.length > 0) {
+        const ids = items.map((p) => p.id).join(',');
+        const transData = await api<{ data: Record<string, Array<{ locale: string }>> }>(
+          `/api/v1/content/pages/translations-batch?ids=${ids}`,
+        );
+        setTranslationsMap(transData.data);
       }
     } catch (err) {
       console.error('Failed to load pages:', err);
@@ -118,6 +136,7 @@ export function PagesPage() {
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Página</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Status</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Atualizado</th>
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">Idiomas</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Ações</th>
                 </tr>
               </thead>
@@ -144,6 +163,12 @@ export function PagesPage() {
                     <td className="px-4 py-3 text-sm text-gray-400 hidden md:table-cell">
                       {formatDate(page.updatedAt || page.createdAt)}
                     </td>
+                    <td className="px-4 py-3 hidden lg:table-cell">
+                      <TranslationBadges
+                        translatedLocales={(translationsMap[page.id] ?? []).map((t) => t.locale)}
+                        defaultLocale="pt"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Link
@@ -152,6 +177,17 @@ export function PagesPage() {
                         >
                           Editar
                         </Link>
+                        <button
+                          onClick={() => {
+                            setTransTargetId(page.id);
+                            setTransTargetName(page.title);
+                            setTransModalOpen(true);
+                          }}
+                          className="text-sm text-blue-400 hover:text-blue-300"
+                          title="Traduzir"
+                        >
+                          🌐
+                        </button>
                         <button
                           onClick={() => handleDelete(page.id)}
                           disabled={deleting === page.id}
@@ -193,6 +229,18 @@ export function PagesPage() {
           )}
         </div>
       )}
+
+      {/* Translation Modal */}
+      <TranslationModal
+        open={transModalOpen}
+        onClose={() => setTransModalOpen(false)}
+        onSaved={() => loadPages(pagination.page)}
+        contentType="pages"
+        contentId={transTargetId}
+        existingLocales={(translationsMap[transTargetId] ?? []).map((t) => t.locale)}
+        defaultLocale="pt"
+        itemName={transTargetName}
+      />
     </div>
   );
 }

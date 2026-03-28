@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { slugify } from '@/lib/utils';
+import { TranslationModal } from '@/components/TranslationModal';
+import { TranslationBadges } from '@/components/TranslationBadges';
 
 export function PageFormPage() {
   const { id } = useParams();
@@ -18,6 +20,10 @@ export function PageFormPage() {
   const [slugManual, setSlugManual] = useState(false);
   const [content, setContent] = useState('');
   const [status, setStatus] = useState<'draft' | 'published'>('draft');
+
+  // Translation state
+  const [transModalOpen, setTransModalOpen] = useState(false);
+  const [translatedLocales, setTranslatedLocales] = useState<string[]>([]);
 
   // Load page for editing
   useEffect(() => {
@@ -36,6 +42,14 @@ export function PageFormPage() {
         setSlugManual(true);
         setContent(data.content ?? '');
         setStatus(data.status as 'draft' | 'published');
+
+        // Load translations
+        try {
+          const transData = await api<{ data: Array<{ locale: string }> }>(
+            `/api/v1/content/pages/${id}/translations`,
+          );
+          setTranslatedLocales(transData.data.map((t) => t.locale));
+        } catch { /* ignore */ }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao carregar página');
       } finally {
@@ -198,6 +212,26 @@ export function PageFormPage() {
           </p>
         </div>
 
+        {/* Translations */}
+        {isEditing && (
+          <div className="border-t border-gray-800 pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <label className={labelClass}>Traduções</label>
+              <TranslationBadges
+                translatedLocales={translatedLocales}
+                defaultLocale="pt"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setTransModalOpen(true)}
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors flex items-center gap-2 text-sm"
+            >
+              🌐 Gerenciar Traduções
+            </button>
+          </div>
+        )}
+
         {/* Submit */}
         <div className="flex items-center gap-3 pt-4 border-t border-gray-800">
           <button
@@ -216,6 +250,27 @@ export function PageFormPage() {
           </button>
         </div>
       </form>
+
+      {/* Translation Modal */}
+      {isEditing && id && (
+        <TranslationModal
+          open={transModalOpen}
+          onClose={() => setTransModalOpen(false)}
+          onSaved={async () => {
+            try {
+              const transData = await api<{ data: Array<{ locale: string }> }>(
+                `/api/v1/content/pages/${id}/translations`,
+              );
+              setTranslatedLocales(transData.data.map((t) => t.locale));
+            } catch { /* ignore */ }
+          }}
+          contentType="pages"
+          contentId={id}
+          existingLocales={translatedLocales}
+          defaultLocale="pt"
+          itemName={title}
+        />
+      )}
     </div>
   );
 }

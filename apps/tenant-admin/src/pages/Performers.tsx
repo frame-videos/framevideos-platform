@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { slugify } from '@/lib/utils';
+import { TranslationBadges } from '@/components/TranslationBadges';
+import { TranslationModal } from '@/components/TranslationModal';
 
 interface Performer {
   id: string;
@@ -52,6 +54,12 @@ export function PerformersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Translation state
+  const [translationsMap, setTranslationsMap] = useState<Record<string, Array<{ locale: string }>>>({});
+  const [transModalOpen, setTransModalOpen] = useState(false);
+  const [transTargetId, setTransTargetId] = useState('');
+  const [transTargetName, setTransTargetName] = useState('');
+
   const loadPerformers = useCallback(async (page = 1) => {
     setLoading(true);
     try {
@@ -62,6 +70,15 @@ export function PerformersPage() {
       );
       setPerformers(data.data);
       setPagination(data.pagination);
+
+      // Load translations batch
+      if (data.data.length > 0) {
+        const ids = data.data.map((p) => p.id).join(',');
+        const transData = await api<{ data: Record<string, Array<{ locale: string }>> }>(
+          `/api/v1/content/performers/translations-batch?ids=${ids}`,
+        );
+        setTranslationsMap(transData.data);
+      }
     } catch (err) {
       console.error('Failed to load performers:', err);
     } finally {
@@ -221,12 +238,29 @@ export function PerformersPage() {
               {perf.bio && (
                 <p className="text-xs text-gray-400 line-clamp-2 mb-3">{perf.bio}</p>
               )}
+              <div className="mb-2">
+                <TranslationBadges
+                  translatedLocales={(translationsMap[perf.id] ?? []).map((t) => t.locale)}
+                  defaultLocale="pt"
+                />
+              </div>
               <div className="flex items-center gap-2 pt-3 border-t border-gray-800">
                 <button
                   onClick={() => openEdit(perf)}
                   className="text-sm text-purple-400 hover:text-purple-300"
                 >
                   Editar
+                </button>
+                <button
+                  onClick={() => {
+                    setTransTargetId(perf.id);
+                    setTransTargetName(perf.name);
+                    setTransModalOpen(true);
+                  }}
+                  className="text-sm text-blue-400 hover:text-blue-300"
+                  title="Traduzir"
+                >
+                  🌐
                 </button>
                 <button
                   onClick={() => handleDelete(perf.id)}
@@ -372,6 +406,18 @@ export function PerformersPage() {
           </div>
         </div>
       )}
+
+      {/* Translation Modal */}
+      <TranslationModal
+        open={transModalOpen}
+        onClose={() => setTransModalOpen(false)}
+        onSaved={() => loadPerformers(pagination.page)}
+        contentType="performers"
+        contentId={transTargetId}
+        existingLocales={(translationsMap[transTargetId] ?? []).map((t) => t.locale)}
+        defaultLocale="pt"
+        itemName={transTargetName}
+      />
     </div>
   );
 }

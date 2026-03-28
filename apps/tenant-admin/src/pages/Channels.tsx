@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { slugify } from '@/lib/utils';
+import { TranslationBadges } from '@/components/TranslationBadges';
+import { TranslationModal } from '@/components/TranslationModal';
 
 interface Channel {
   id: string;
@@ -51,6 +53,12 @@ export function ChannelsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Translation state
+  const [translationsMap, setTranslationsMap] = useState<Record<string, Array<{ locale: string }>>>({});
+  const [transModalOpen, setTransModalOpen] = useState(false);
+  const [transTargetId, setTransTargetId] = useState('');
+  const [transTargetName, setTransTargetName] = useState('');
+
   const loadChannels = useCallback(async (page = 1) => {
     setLoading(true);
     try {
@@ -59,6 +67,15 @@ export function ChannelsPage() {
       );
       setChannels(data.data);
       setPagination(data.pagination);
+
+      // Load translations batch
+      if (data.data.length > 0) {
+        const ids = data.data.map((c) => c.id).join(',');
+        const transData = await api<{ data: Record<string, Array<{ locale: string }>> }>(
+          `/api/v1/content/channels/translations-batch?ids=${ids}`,
+        );
+        setTranslationsMap(transData.data);
+      }
     } catch (err) {
       console.error('Failed to load channels:', err);
     } finally {
@@ -198,12 +215,29 @@ export function ChannelsPage() {
               {ch.description && (
                 <p className="text-xs text-gray-400 line-clamp-2 mb-3">{ch.description}</p>
               )}
+              <div className="mb-2">
+                <TranslationBadges
+                  translatedLocales={(translationsMap[ch.id] ?? []).map((t) => t.locale)}
+                  defaultLocale="pt"
+                />
+              </div>
               <div className="flex items-center gap-2 pt-3 border-t border-gray-800">
                 <button
                   onClick={() => openEdit(ch)}
                   className="text-sm text-purple-400 hover:text-purple-300"
                 >
                   Editar
+                </button>
+                <button
+                  onClick={() => {
+                    setTransTargetId(ch.id);
+                    setTransTargetName(ch.name);
+                    setTransModalOpen(true);
+                  }}
+                  className="text-sm text-blue-400 hover:text-blue-300"
+                  title="Traduzir"
+                >
+                  🌐
                 </button>
                 <button
                   onClick={() => handleDelete(ch.id)}
@@ -349,6 +383,18 @@ export function ChannelsPage() {
           </div>
         </div>
       )}
+
+      {/* Translation Modal */}
+      <TranslationModal
+        open={transModalOpen}
+        onClose={() => setTransModalOpen(false)}
+        onSaved={() => loadChannels(pagination.page)}
+        contentType="channels"
+        contentId={transTargetId}
+        existingLocales={(translationsMap[transTargetId] ?? []).map((t) => t.locale)}
+        defaultLocale="pt"
+        itemName={transTargetName}
+      />
     </div>
   );
 }

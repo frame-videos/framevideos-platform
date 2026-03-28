@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { formatDuration } from '@/lib/utils';
+import { TranslationBadges } from '@/components/TranslationBadges';
+import { TranslationModal } from '@/components/TranslationModal';
 
 interface Video {
   id: string;
@@ -40,6 +42,12 @@ export function VideosPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
+  // Translation state
+  const [translationsMap, setTranslationsMap] = useState<Record<string, Array<{ locale: string }>>>({});
+  const [transModalOpen, setTransModalOpen] = useState(false);
+  const [transTargetId, setTransTargetId] = useState('');
+  const [transTargetName, setTransTargetName] = useState('');
+
   // Category options for filter
   const [categories, setCategories] = useState<CategoryOption[]>([]);
 
@@ -62,6 +70,15 @@ export function VideosPage() {
       const data = await api<{ data: Video[]; pagination: Pagination }>(`/api/v1/content/videos?${params}`);
       setVideos(data.data);
       setPagination(data.pagination);
+
+      // Load translations batch
+      if (data.data.length > 0) {
+        const ids = data.data.map((v) => v.id).join(',');
+        const transData = await api<{ data: Record<string, Array<{ locale: string }>> }>(
+          `/api/v1/content/videos/translations-batch?ids=${ids}`,
+        );
+        setTranslationsMap(transData.data);
+      }
     } catch (err) {
       console.error('Failed to load videos:', err);
     } finally {
@@ -257,6 +274,7 @@ export function VideosPage() {
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Status</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Duração</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Views</th>
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">Idiomas</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Ações</th>
                 </tr>
               </thead>
@@ -305,6 +323,12 @@ export function VideosPage() {
                     <td className="px-4 py-3 text-sm text-gray-400 hidden md:table-cell">
                       {video.viewCount.toLocaleString('pt-BR')}
                     </td>
+                    <td className="px-4 py-3 hidden lg:table-cell">
+                      <TranslationBadges
+                        translatedLocales={(translationsMap[video.id] ?? []).map((t) => t.locale)}
+                        defaultLocale="pt"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Link
@@ -313,6 +337,17 @@ export function VideosPage() {
                         >
                           Editar
                         </Link>
+                        <button
+                          onClick={() => {
+                            setTransTargetId(video.id);
+                            setTransTargetName(video.title);
+                            setTransModalOpen(true);
+                          }}
+                          className="text-sm text-blue-400 hover:text-blue-300"
+                          title="Traduzir"
+                        >
+                          🌐
+                        </button>
                         <button
                           onClick={() => handleDelete(video.id)}
                           disabled={deleting === video.id}
@@ -354,6 +389,18 @@ export function VideosPage() {
           )}
         </div>
       )}
+
+      {/* Translation Modal */}
+      <TranslationModal
+        open={transModalOpen}
+        onClose={() => setTransModalOpen(false)}
+        onSaved={() => loadVideos(pagination.page)}
+        contentType="videos"
+        contentId={transTargetId}
+        existingLocales={(translationsMap[transTargetId] ?? []).map((t) => t.locale)}
+        defaultLocale="pt"
+        itemName={transTargetName}
+      />
     </div>
   );
 }

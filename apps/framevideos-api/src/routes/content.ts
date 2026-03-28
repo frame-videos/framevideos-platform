@@ -2231,6 +2231,59 @@ for (const [contentType, config] of Object.entries(TRANSLATION_CONFIGS)) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TRANSLATION BATCH (avoid N+1 on listings)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+for (const [contentType, config] of Object.entries(TRANSLATION_CONFIGS)) {
+  // GET /content/{type}/translations-batch?ids=id1,id2,id3
+  content.get(`/${contentType}/translations-batch`, async (c) => {
+    const tenantId = c.get('tenantId')!;
+    const idsParam = c.req.query('ids');
+    if (!idsParam) {
+      return c.json({ data: {} });
+    }
+
+    const ids = idsParam.split(',').filter(Boolean).slice(0, 100); // cap at 100
+    if (ids.length === 0) {
+      return c.json({ data: {} });
+    }
+
+    const db = new D1Client(c.env.DB);
+
+    // Verify items belong to tenant (batch check)
+    const placeholders = ids.map(() => '?').join(',');
+    const validItems = await db.query<{ id: string }>(
+      `SELECT id FROM ${config.parentTable} WHERE id IN (${placeholders}) AND tenant_id = ?`,
+      [...ids, tenantId],
+    );
+    const validIds = new Set(validItems.map((i) => i.id));
+
+    if (validIds.size === 0) {
+      return c.json({ data: {} });
+    }
+
+    const validIdsArr = [...validIds];
+    const ph = validIdsArr.map(() => '?').join(',');
+
+    const translations = await db.query<{ parent_id: string; locale: string }>(
+      `SELECT ${config.parentIdColumn} as parent_id, locale FROM ${config.table} WHERE ${config.parentIdColumn} IN (${ph})`,
+      validIdsArr,
+    );
+
+    // Group by parent_id
+    const result: Record<string, Array<{ locale: string }>> = {};
+    for (const t of translations) {
+      if (!result[t.parent_id]) {
+        result[t.parent_id] = [];
+      }
+      result[t.parent_id].push({ locale: t.locale });
+    }
+
+    return c.json({ data: result });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REDIRECTS
 // ═══════════════════════════════════════════════════════════════════════════════
 

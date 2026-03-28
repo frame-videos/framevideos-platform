@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '@/lib/api';
+import { TranslationBadges } from '@/components/TranslationBadges';
+import { TranslationModal } from '@/components/TranslationModal';
 
 interface Tag {
   id: string;
@@ -27,6 +29,12 @@ export function TagsPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
 
+  // Translation state
+  const [translationsMap, setTranslationsMap] = useState<Record<string, Array<{ locale: string }>>>({});
+  const [transModalOpen, setTransModalOpen] = useState(false);
+  const [transTargetId, setTransTargetId] = useState('');
+  const [transTargetName, setTransTargetName] = useState('');
+
   const loadTags = useCallback(async (page = 1) => {
     setLoading(true);
     try {
@@ -37,6 +45,15 @@ export function TagsPage() {
       );
       setTags(data.data);
       setPagination(data.pagination);
+
+      // Load translations batch
+      if (data.data.length > 0) {
+        const ids = data.data.map((t) => t.id).join(',');
+        const transData = await api<{ data: Record<string, Array<{ locale: string }>> }>(
+          `/api/v1/content/tags/translations-batch?ids=${ids}`,
+        );
+        setTranslationsMap(transData.data);
+      }
     } catch (err) {
       console.error('Failed to load tags:', err);
     } finally {
@@ -164,6 +181,22 @@ export function TagsPage() {
               >
                 <span className="text-gray-500">#</span>
                 <span>{tag.name}</span>
+                <TranslationBadges
+                  translatedLocales={(translationsMap[tag.id] ?? []).map((t) => t.locale)}
+                  defaultLocale="pt"
+                  compact
+                />
+                <button
+                  onClick={() => {
+                    setTransTargetId(tag.id);
+                    setTransTargetName(tag.name);
+                    setTransModalOpen(true);
+                  }}
+                  className="text-blue-400 hover:text-blue-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Traduzir"
+                >
+                  🌐
+                </button>
                 <button
                   onClick={() => handleDelete(tag.id)}
                   disabled={deleting === tag.id}
@@ -202,6 +235,18 @@ export function TagsPage() {
           )}
         </div>
       )}
+
+      {/* Translation Modal */}
+      <TranslationModal
+        open={transModalOpen}
+        onClose={() => setTransModalOpen(false)}
+        onSaved={() => loadTags(pagination.page)}
+        contentType="tags"
+        contentId={transTargetId}
+        existingLocales={(translationsMap[transTargetId] ?? []).map((t) => t.locale)}
+        defaultLocale="pt"
+        itemName={transTargetName}
+      />
     </div>
   );
 }
