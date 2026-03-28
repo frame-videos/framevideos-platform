@@ -280,7 +280,7 @@ crawler.get('/runs', async (c) => {
     source_name: string | null;
   }>(
     `SELECT cr.id, cr.source_id, cr.status, cr.videos_found, cr.videos_imported,
-            cr.videos_duplicate, cr.log_json, cr.started_at, cr.completed_at,
+            cr.log_json, cr.started_at, cr.completed_at,
             cs.name as source_name
      FROM crawler_runs cr
      LEFT JOIN crawler_sources cs ON cs.id = cr.source_id
@@ -325,7 +325,7 @@ crawler.get('/runs/:id', async (c) => {
     source_name: string | null; source_url: string | null;
   }>(
     `SELECT cr.id, cr.source_id, cr.status, cr.videos_found, cr.videos_imported,
-            cr.videos_duplicate, cr.log_json, cr.started_at, cr.completed_at,
+            cr.log_json, cr.started_at, cr.completed_at,
             cs.name as source_name, cs.base_url as source_url
      FROM crawler_runs cr
      LEFT JOIN crawler_sources cs ON cs.id = cr.source_id
@@ -342,9 +342,9 @@ crawler.get('/runs/:id', async (c) => {
     sourceUrl: run.source_url,
     status: run.status,
     videosFound: run.videos_found,
-    videosNew: run.videos_new,
-    videosDuplicate: run.videos_duplicate,
-    errors: JSON.parse(run.errors || '[]'),
+    videosNew: run.videos_imported,
+    videosDuplicate: (run.videos_found ?? 0) - (run.videos_imported ?? 0),
+    errors: JSON.parse(run.log_json || '[]'),
     startedAt: run.started_at,
     completedAt: run.completed_at,
   });
