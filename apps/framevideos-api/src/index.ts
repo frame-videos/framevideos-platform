@@ -9,6 +9,7 @@ import { errorHandler } from './middleware/error-handler.js';
 import { structuredLogger } from './middleware/logger.js';
 import { errorTracker } from './middleware/error-tracker.js';
 import { securityHeaders } from './middleware/security-headers.js';
+import { sanitizeInput } from './middleware/sanitize.js';
 import { health } from './routes/health.js';
 import { auth } from './routes/auth.js';
 import { billing } from './routes/billing.js';
@@ -47,6 +48,9 @@ app.use(
 
 // Security headers em toda response
 app.use('*', securityHeaders());
+
+// Input sanitization (antes das routes, depois do CORS)
+app.use('*', sanitizeInput());
 
 // Request ID em toda request
 app.use('*', requestIdMiddleware);
