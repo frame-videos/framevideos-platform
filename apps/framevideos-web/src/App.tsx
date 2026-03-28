@@ -7,6 +7,8 @@ import { Landing } from '@/pages/Landing';
 import { Login } from '@/pages/Login';
 import { Signup } from '@/pages/Signup';
 import { ForgotPassword } from '@/pages/ForgotPassword';
+import { CheckoutSuccess } from '@/pages/CheckoutSuccess';
+import { CheckoutCancel } from '@/pages/CheckoutCancel';
 
 // Dashboard pages
 import { DashboardHome } from '@/pages/dashboard/DashboardHome';
@@ -44,6 +46,8 @@ export function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/checkout/success" element={<CheckoutSuccess />} />
+      <Route path="/checkout/cancel" element={<CheckoutCancel />} />
 
       {/* Dashboard — protected by auth */}
       <Route element={<AuthGuard />}>

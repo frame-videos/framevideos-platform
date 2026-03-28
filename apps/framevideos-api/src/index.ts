@@ -9,6 +9,7 @@ import { requestIdMiddleware } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { health } from './routes/health.js';
 import { auth } from './routes/auth.js';
+import { billing } from './routes/billing.js';
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ app.route('/health', health);
 
 // API v1
 app.route('/api/v1/auth', auth);
+app.route('/api/v1/billing', billing);
 
 // 404 catch-all
 app.notFound((c) => {

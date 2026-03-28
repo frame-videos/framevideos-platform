@@ -35,6 +35,9 @@ importers:
       '@frame-videos/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@frame-videos/billing':
+        specifier: workspace:*
+        version: link:../../packages/billing
       '@frame-videos/db':
         specifier: workspace:*
         version: link:../../packages/db

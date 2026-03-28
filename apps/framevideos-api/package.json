@@ -16,6 +16,7 @@
     "@frame-videos/shared": "workspace:*",
     "@frame-videos/db": "workspace:*",
     "@frame-videos/auth": "workspace:*",
+    "@frame-videos/billing": "workspace:*",
     "hono": "^4.6.0",
     "zod": "^3.23.0"
   },

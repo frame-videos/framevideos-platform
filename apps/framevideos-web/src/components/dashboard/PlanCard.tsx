@@ -9,6 +9,7 @@ interface PlanCardProps {
   features: readonly string[];
   isCurrent?: boolean;
   isHighlighted?: boolean;
+  loading?: boolean;
   onSelect?: () => void;
 }
 
@@ -19,6 +20,7 @@ export function PlanCard({
   features,
   isCurrent = false,
   isHighlighted = false,
+  loading = false,
   onSelect,
 }: PlanCardProps) {
   return (
@@ -80,6 +82,7 @@ export function PlanCard({
         <Button
           variant={isHighlighted ? 'primary' : 'outline'}
           className="w-full"
+          loading={loading}
           onClick={onSelect}
         >
           {price === 0 ? 'Downgrade' : 'Fazer Upgrade'}
