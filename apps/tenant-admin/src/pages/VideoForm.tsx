@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, type DragEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api } from '@/lib/api';
+import { api, apiUpload } from '@/lib/api';
 import { slugify } from '@/lib/utils';
 
 interface CategoryOption { id: string; name: string; }
@@ -31,6 +31,11 @@ export function VideoFormPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedPerformers, setSelectedPerformers] = useState<string[]>([]);
   const [channelId, setChannelId] = useState('');
+
+  // Thumbnail upload
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Options
   const [categories, setCategories] = useState<CategoryOption[]>([]);
@@ -99,6 +104,54 @@ export function VideoFormPage() {
   const handleTitleChange = (val: string) => {
     setTitle(val);
     if (!slugManual) setSlug(slugify(val));
+  };
+
+  // Thumbnail upload handlers
+  const handleFileUpload = async (file: File) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowed.includes(file.type)) {
+      setError('Tipo de arquivo não permitido. Aceitos: JPEG, PNG, WebP, GIF');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Arquivo muito grande. Máximo: 5MB');
+      return;
+    }
+
+    setUploading(true);
+    setError('');
+    try {
+      const result = await apiUpload<{ url: string }>('/api/v1/content/upload', file);
+      setThumbnailUrl(result.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao fazer upload');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileUpload(file);
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(true);
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFileUpload(file);
+    // Reset input so same file can be selected again
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -197,13 +250,63 @@ export function VideoFormPage() {
           </div>
         </div>
 
+        {/* Thumbnail Upload */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className={labelClass}>URL da Thumbnail</label>
-            <input type="url" value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} className={inputClass} placeholder="https://..." />
-            {thumbnailUrl && (
-              <img src={thumbnailUrl} alt="Preview" className="mt-2 h-24 rounded object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
-            )}
+            <label className={labelClass}>Thumbnail</label>
+            <div
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onClick={() => fileInputRef.current?.click()}
+              className={`relative border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                dragOver
+                  ? 'border-purple-500 bg-purple-900/20'
+                  : 'border-gray-700 hover:border-gray-600 bg-gray-800/50'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={handleFileInput}
+                className="hidden"
+              />
+              {uploading ? (
+                <div className="py-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mx-auto" />
+                  <p className="text-sm text-gray-400 mt-2">Enviando...</p>
+                </div>
+              ) : thumbnailUrl ? (
+                <div className="relative">
+                  <img
+                    src={thumbnailUrl}
+                    alt="Thumbnail"
+                    className="max-h-32 mx-auto rounded object-cover"
+                    onError={(e) => (e.currentTarget.style.display = 'none')}
+                  />
+                  <p className="text-xs text-gray-500 mt-2">Clique ou arraste para trocar</p>
+                </div>
+              ) : (
+                <div className="py-4">
+                  <svg className="w-10 h-10 mx-auto text-gray-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-sm text-gray-400">Arraste uma imagem ou clique para selecionar</p>
+                  <p className="text-xs text-gray-600 mt-1">JPEG, PNG, WebP, GIF — máx. 5MB</p>
+                </div>
+              )}
+            </div>
+            {/* Fallback: manual URL */}
+            <div className="mt-2">
+              <input
+                type="url"
+                value={thumbnailUrl}
+                onChange={(e) => setThumbnailUrl(e.target.value)}
+                className={inputClass}
+                placeholder="Ou cole uma URL diretamente..."
+              />
+            </div>
           </div>
           <div>
             <label className={labelClass}>Duração (segundos)</label>

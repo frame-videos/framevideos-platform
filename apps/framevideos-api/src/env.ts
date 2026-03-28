@@ -10,6 +10,9 @@ export type Env = {
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
   SENDGRID_API_KEY: string;
+  CF_ZONE_ID: string;
+  CF_AUTH_EMAIL: string;
+  CF_AUTH_KEY: string;
 };
 
 export type AppContext = {

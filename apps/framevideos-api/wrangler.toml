@@ -24,6 +24,7 @@ id = "6be904ed61714310b45e04f7c181f1ba"
 
 [vars]
 ENVIRONMENT = "development"
+# CF_ZONE_ID, CF_AUTH_EMAIL, CF_AUTH_KEY set via `wrangler secret put`
 
 [env.staging]
 name = "framevideos-api-staging"

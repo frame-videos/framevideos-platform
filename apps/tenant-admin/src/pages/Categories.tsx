@@ -8,8 +8,15 @@ interface Category {
   slug: string;
   description: string | null;
   imageUrl: string | null;
+  parentId: string | null;
+  sortOrder: number;
   videoCount?: number;
   createdAt: string;
+}
+
+interface TreeCategory extends Category {
+  children: TreeCategory[];
+  depth: number;
 }
 
 interface Pagination {
@@ -28,11 +35,59 @@ interface CategoryForm {
 
 const emptyForm: CategoryForm = { name: '', slug: '', description: '', imageUrl: '' };
 
+/** Build a tree structure from flat categories */
+function buildCategoryTree(categories: Category[]): TreeCategory[] {
+  const map = new Map<string, TreeCategory>();
+  const roots: TreeCategory[] = [];
+
+  // Create tree nodes
+  for (const cat of categories) {
+    map.set(cat.id, { ...cat, children: [], depth: 0 });
+  }
+
+  // Build hierarchy
+  for (const cat of categories) {
+    const node = map.get(cat.id)!;
+    if (cat.parentId && map.has(cat.parentId)) {
+      const parent = map.get(cat.parentId)!;
+      node.depth = parent.depth + 1;
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  // Sort children by sortOrder
+  const sortChildren = (nodes: TreeCategory[]) => {
+    nodes.sort((a, b) => a.sortOrder - b.sortOrder);
+    for (const node of nodes) sortChildren(node.children);
+  };
+  sortChildren(roots);
+
+  return roots;
+}
+
+/** Flatten tree to a list with depth info for rendering */
+function flattenTree(nodes: TreeCategory[]): TreeCategory[] {
+  const result: TreeCategory[] = [];
+  const walk = (items: TreeCategory[]) => {
+    for (const item of items) {
+      result.push(item);
+      walk(item.children);
+    }
+  };
+  walk(nodes);
+  return result;
+}
+
 export function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [pagination, setPagination] = useState<Pagination>({ page: 1, limit: 50, total: 0, totalPages: 0 });
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'tree'>('table');
+  const [dragItem, setDragItem] = useState<string | null>(null);
+  const [reordering, setReordering] = useState(false);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -140,23 +195,66 @@ export function CategoriesPage() {
     }
   };
 
+  const handleReorder = async (catId: string, direction: 'up' | 'down') => {
+    const idx = categories.findIndex((c) => c.id === catId);
+    if (idx < 0) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= categories.length) return;
+
+    setReordering(true);
+    try {
+      const cat = categories[idx]!;
+      const swap = categories[swapIdx]!;
+      // Swap sort_order values via API
+      await Promise.all([
+        api(`/api/v1/content/categories/${cat.id}`, { method: 'PUT', body: { name: cat.name, slug: cat.slug, sortOrder: swap.sortOrder } }),
+        api(`/api/v1/content/categories/${swap.id}`, { method: 'PUT', body: { name: swap.name, slug: swap.slug, sortOrder: cat.sortOrder } }),
+      ]);
+      loadCategories(pagination.page);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao reordenar');
+    } finally {
+      setReordering(false);
+    }
+  };
+
   const inputClass =
     'w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 text-sm';
   const labelClass = 'block text-sm font-medium text-gray-300 mb-1.5';
+
+  // Build tree for tree view
+  const tree = buildCategoryTree(categories);
+  const flatTree = flattenTree(tree);
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold">Categorias</h1>
-        <button
-          onClick={openNew}
-          className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          + Nova Categoria
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-gray-800 rounded-lg p-0.5">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'table' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            >
+              Lista
+            </button>
+            <button
+              onClick={() => setViewMode('tree')}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'tree' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            >
+              Árvore
+            </button>
+          </div>
+          <button
+            onClick={openNew}
+            className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            + Nova Categoria
+          </button>
+        </div>
       </div>
 
-      {/* Table */}
+      {/* Table / Tree View */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-gray-500">Carregando...</div>
@@ -167,11 +265,70 @@ export function CategoriesPage() {
               Criar primeira categoria →
             </button>
           </div>
+        ) : viewMode === 'tree' ? (
+          /* Tree View */
+          <div className="p-4">
+            {flatTree.map((cat) => (
+              <div
+                key={cat.id}
+                className="flex items-center gap-3 py-2 px-3 hover:bg-gray-800/50 rounded-lg group"
+                style={{ paddingLeft: `${cat.depth * 24 + 12}px` }}
+              >
+                {cat.depth > 0 && (
+                  <span className="text-gray-700 text-xs">└─</span>
+                )}
+                <div className="w-8 h-8 bg-gray-800 rounded overflow-hidden shrink-0">
+                  {cat.imageUrl ? (
+                    <img src={cat.imageUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-600 text-xs">📁</div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-gray-200">{cat.name}</span>
+                  <span className="text-xs text-gray-600 ml-2">/{cat.slug}</span>
+                </div>
+                {cat.children.length > 0 && (
+                  <span className="text-xs text-gray-600">{cat.children.length} sub</span>
+                )}
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => handleReorder(cat.id, 'up')}
+                    disabled={reordering}
+                    className="p-1 text-gray-500 hover:text-white text-xs disabled:opacity-30"
+                    title="Mover para cima"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    onClick={() => handleReorder(cat.id, 'down')}
+                    disabled={reordering}
+                    className="p-1 text-gray-500 hover:text-white text-xs disabled:opacity-30"
+                    title="Mover para baixo"
+                  >
+                    ↓
+                  </button>
+                  <button onClick={() => openEdit(cat)} className="text-xs text-purple-400 hover:text-purple-300 px-1">
+                    Editar
+                  </button>
+                  <button
+                    onClick={() => handleDelete(cat.id)}
+                    disabled={deleting === cat.id}
+                    className="text-xs text-red-400 hover:text-red-300 px-1 disabled:opacity-50"
+                  >
+                    {deleting === cat.id ? '...' : 'Excluir'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
+          /* Table View */
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800 text-left">
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase w-10">Ordem</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Categoria</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Slug</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Descrição</th>
@@ -179,8 +336,26 @@ export function CategoriesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {categories.map((cat) => (
+                {categories.map((cat, idx) => (
                   <tr key={cat.id} className="hover:bg-gray-800/50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleReorder(cat.id, 'up')}
+                          disabled={idx === 0 || reordering}
+                          className="text-gray-500 hover:text-white text-xs disabled:opacity-30"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          onClick={() => handleReorder(cat.id, 'down')}
+                          disabled={idx === categories.length - 1 || reordering}
+                          className="text-gray-500 hover:text-white text-xs disabled:opacity-30"
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-gray-800 rounded-lg overflow-hidden shrink-0">

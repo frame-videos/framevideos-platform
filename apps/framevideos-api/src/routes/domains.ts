@@ -25,6 +25,7 @@ const domains = new Hono<AppContext>();
 
 const CNAME_TARGET = 'sites.framevideos.com';
 const CLOUDFLARE_DOH_URL = 'https://cloudflare-dns.com/dns-query';
+const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
 const MAX_VERIFICATIONS_PER_HOUR = 10;
 
 // ─── Schemas de validação ────────────────────────────────────────────────────
@@ -218,6 +219,194 @@ async function getTenantSlug(db: D1Client, tenantId: string): Promise<string | n
   return result?.slug ?? null;
 }
 
+// ─── Cloudflare Custom Hostnames API ─────────────────────────────────────────
+
+interface CfCustomHostnameResult {
+  success: boolean;
+  errors: Array<{ message: string }>;
+  result?: {
+    id: string;
+    hostname: string;
+    status: string;
+    ssl: {
+      status: string;
+      method: string;
+      type: string;
+    };
+    verification_errors?: string[];
+    ownership_verification?: {
+      type: string;
+      name: string;
+      value: string;
+    };
+  };
+}
+
+/**
+ * Create a Custom Hostname in Cloudflare for SaaS.
+ * Enables automatic SSL and routing for custom domains.
+ */
+async function createCustomHostname(
+  domain: string,
+  env: { CF_ZONE_ID: string; CF_AUTH_EMAIL: string; CF_AUTH_KEY: string },
+): Promise<{ id: string; status: string } | null> {
+  if (!env.CF_ZONE_ID || !env.CF_AUTH_EMAIL || !env.CF_AUTH_KEY) {
+    console.warn('[domains] CF API credentials not configured, skipping custom hostname creation');
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `${CLOUDFLARE_API_URL}/zones/${env.CF_ZONE_ID}/custom_hostnames`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Auth-Email': env.CF_AUTH_EMAIL,
+          'X-Auth-Key': env.CF_AUTH_KEY,
+        },
+        body: JSON.stringify({
+          hostname: domain,
+          ssl: {
+            method: 'http',
+            type: 'dv',
+            settings: {
+              min_tls_version: '1.2',
+              http2: 'on',
+            },
+          },
+        }),
+      },
+    );
+
+    const data = (await response.json()) as CfCustomHostnameResult;
+
+    if (!data.success) {
+      console.error('[domains] CF custom hostname creation failed:', data.errors);
+      return null;
+    }
+
+    return {
+      id: data.result!.id,
+      status: data.result!.status,
+    };
+  } catch (err) {
+    console.error('[domains] CF custom hostname creation error:', err);
+    return null;
+  }
+}
+
+/**
+ * Delete a Custom Hostname from Cloudflare.
+ */
+async function deleteCustomHostname(
+  customHostnameId: string,
+  env: { CF_ZONE_ID: string; CF_AUTH_EMAIL: string; CF_AUTH_KEY: string },
+): Promise<boolean> {
+  if (!env.CF_ZONE_ID || !env.CF_AUTH_EMAIL || !env.CF_AUTH_KEY) {
+    console.warn('[domains] CF API credentials not configured, skipping custom hostname deletion');
+    return false;
+  }
+
+  try {
+    const response = await fetch(
+      `${CLOUDFLARE_API_URL}/zones/${env.CF_ZONE_ID}/custom_hostnames/${customHostnameId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'X-Auth-Email': env.CF_AUTH_EMAIL,
+          'X-Auth-Key': env.CF_AUTH_KEY,
+        },
+      },
+    );
+
+    const data = (await response.json()) as { success: boolean; errors: Array<{ message: string }> };
+
+    if (!data.success) {
+      console.error('[domains] CF custom hostname deletion failed:', data.errors);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[domains] CF custom hostname deletion error:', err);
+    return false;
+  }
+}
+
+/**
+ * Get Custom Hostname status from Cloudflare.
+ * Returns the hostname details including SSL status and verification info.
+ */
+async function getCustomHostnameStatus(
+  customHostnameId: string,
+  env: { CF_ZONE_ID: string; CF_AUTH_EMAIL: string; CF_AUTH_KEY: string },
+): Promise<CfCustomHostnameResult['result'] | null> {
+  if (!env.CF_ZONE_ID || !env.CF_AUTH_EMAIL || !env.CF_AUTH_KEY) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `${CLOUDFLARE_API_URL}/zones/${env.CF_ZONE_ID}/custom_hostnames/${customHostnameId}`,
+      {
+        method: 'GET',
+        headers: {
+          'X-Auth-Email': env.CF_AUTH_EMAIL,
+          'X-Auth-Key': env.CF_AUTH_KEY,
+        },
+      },
+    );
+
+    const data = (await response.json()) as CfCustomHostnameResult;
+
+    if (!data.success || !data.result) {
+      return null;
+    }
+
+    return data.result;
+  } catch (err) {
+    console.error('[domains] CF custom hostname status error:', err);
+    return null;
+  }
+}
+
+/**
+ * Find Custom Hostname by domain name in Cloudflare.
+ */
+async function findCustomHostnameByDomain(
+  domain: string,
+  env: { CF_ZONE_ID: string; CF_AUTH_EMAIL: string; CF_AUTH_KEY: string },
+): Promise<string | null> {
+  if (!env.CF_ZONE_ID || !env.CF_AUTH_EMAIL || !env.CF_AUTH_KEY) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `${CLOUDFLARE_API_URL}/zones/${env.CF_ZONE_ID}/custom_hostnames?hostname=${encodeURIComponent(domain)}`,
+      {
+        method: 'GET',
+        headers: {
+          'X-Auth-Email': env.CF_AUTH_EMAIL,
+          'X-Auth-Key': env.CF_AUTH_KEY,
+        },
+      },
+    );
+
+    const data = (await response.json()) as { success: boolean; result: Array<{ id: string; hostname: string }> };
+
+    if (!data.success || !data.result?.length) {
+      return null;
+    }
+
+    return data.result[0]!.id;
+  } catch (err) {
+    console.error('[domains] CF find custom hostname error:', err);
+    return null;
+  }
+}
+
 // ─── POST /api/v1/domains — Adicionar domínio ───────────────────────────────
 
 domains.post('/', async (c) => {
@@ -270,17 +459,21 @@ domains.post('/', async (c) => {
     );
   }
 
-  // 3. Criar domínio
+  // 3. Create Cloudflare Custom Hostname
+  const cfResult = await createCustomHostname(domain, c.env);
+  const cfHostnameId = cfResult?.id ?? null;
+
+  // 4. Criar domínio
   const domainId = generateUlid();
   const isPrimary = currentCount === 0 ? 1 : 0; // Primeiro domínio é primário automaticamente
 
   await db.execute(
-    `INSERT INTO domains (id, tenant_id, domain, status, is_primary, ssl_status, created_at, updated_at)
-     VALUES (?, ?, ?, 'pending_verification', ?, 'pending', datetime('now'), datetime('now'))`,
-    [domainId, tenantId, domain, isPrimary],
+    `INSERT INTO domains (id, tenant_id, domain, status, is_primary, ssl_status, cf_hostname_id, created_at, updated_at)
+     VALUES (?, ?, ?, 'pending_verification', ?, 'pending', ?, datetime('now'), datetime('now'))`,
+    [domainId, tenantId, domain, isPrimary, cfHostnameId],
   );
 
-  // 4. Audit log
+  // 5. Audit log
   await db.execute(
     `INSERT INTO audit_logs (id, tenant_id, user_id, action, resource_type, resource_id, ip_address)
      VALUES (?, ?, ?, 'domain_add', 'domain', ?, ?)`,
@@ -337,11 +530,12 @@ domains.get('/', async (c) => {
     status: string;
     is_primary: number;
     ssl_status: string | null;
+    cf_hostname_id: string | null;
     verified_at: string | null;
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, domain, status, is_primary, ssl_status, verified_at, created_at, updated_at
+    `SELECT id, domain, status, is_primary, ssl_status, cf_hostname_id, verified_at, created_at, updated_at
      FROM domains
      WHERE tenant_id = ? AND status != 'removed'
      ORDER BY is_primary DESC, created_at ASC`,
@@ -361,6 +555,7 @@ domains.get('/', async (c) => {
       status: d.status,
       isPrimary: d.is_primary === 1,
       sslStatus: d.ssl_status,
+      cfHostnameId: d.cf_hostname_id,
       verifiedAt: d.verified_at,
       createdAt: d.created_at,
       updatedAt: d.updated_at,
@@ -394,8 +589,9 @@ domains.post('/:id/verify', async (c) => {
     tenant_id: string;
     domain: string;
     status: string;
+    cf_hostname_id: string | null;
   }>(
-    `SELECT id, tenant_id, domain, status FROM domains WHERE id = ? AND status != 'removed'`,
+    `SELECT id, tenant_id, domain, status, cf_hostname_id FROM domains WHERE id = ? AND status != 'removed'`,
     [domainId],
   );
 
@@ -414,6 +610,55 @@ domains.post('/:id/verify', async (c) => {
       status: 'active',
       message: 'Domínio já está verificado e ativo',
     });
+  }
+
+  // 0. Check Cloudflare Custom Hostname status first (if available)
+  if (domain.cf_hostname_id) {
+    const cfStatus = await getCustomHostnameStatus(domain.cf_hostname_id, c.env);
+
+    if (cfStatus && cfStatus.status === 'active') {
+      // CF says it's active — mark as verified
+      const sslStatus = cfStatus.ssl?.status === 'active' ? 'active' : 'pending';
+      await db.execute(
+        `UPDATE domains
+         SET status = 'active', ssl_status = ?, verified_at = datetime('now'), updated_at = datetime('now')
+         WHERE id = ?`,
+        [sslStatus, domainId],
+      );
+
+      await db.execute(
+        `INSERT INTO audit_logs (id, tenant_id, user_id, action, resource_type, resource_id, ip_address, details_json)
+         VALUES (?, ?, ?, 'domain_verified', 'domain', ?, ?, ?)`,
+        [
+          generateUlid(),
+          tenantId,
+          c.get('userId'),
+          domainId,
+          c.req.header('CF-Connecting-IP') ?? c.req.header('X-Forwarded-For') ?? null,
+          JSON.stringify({ method: 'cf_custom_hostname', cfStatus: cfStatus.status, sslStatus }),
+        ],
+      );
+
+      return c.json({
+        verified: true,
+        status: 'active',
+        method: 'cf_custom_hostname',
+        sslStatus,
+        message: 'Domínio verificado com sucesso via Cloudflare Custom Hostname!',
+      });
+    }
+
+    // CF hostname exists but not active yet — check if pending
+    if (cfStatus && (cfStatus.status === 'pending' || cfStatus.status === 'moved')) {
+      // Update ssl_status from CF
+      const sslStatus = cfStatus.ssl?.status ?? 'pending';
+      await db.execute(
+        `UPDATE domains SET ssl_status = ?, updated_at = datetime('now') WHERE id = ?`,
+        [sslStatus, domainId],
+      );
+
+      // Still fall through to DNS checks below as fallback
+    }
   }
 
   // 1. Tentar CNAME check
@@ -536,8 +781,9 @@ domains.delete('/:id', async (c) => {
     tenant_id: string;
     domain: string;
     is_primary: number;
+    cf_hostname_id: string | null;
   }>(
-    `SELECT id, tenant_id, domain, is_primary FROM domains WHERE id = ? AND status != 'removed'`,
+    `SELECT id, tenant_id, domain, is_primary, cf_hostname_id FROM domains WHERE id = ? AND status != 'removed'`,
     [domainId],
   );
 
@@ -549,9 +795,14 @@ domains.delete('/:id', async (c) => {
     throw new ForbiddenError('Este domínio não pertence à sua conta');
   }
 
+  // Delete Cloudflare Custom Hostname (if exists)
+  if (domain.cf_hostname_id) {
+    await deleteCustomHostname(domain.cf_hostname_id, c.env);
+  }
+
   // Soft delete
   await db.execute(
-    `UPDATE domains SET status = 'removed', is_primary = 0, updated_at = datetime('now') WHERE id = ?`,
+    `UPDATE domains SET status = 'removed', is_primary = 0, cf_hostname_id = NULL, updated_at = datetime('now') WHERE id = ?`,
     [domainId],
   );
 

@@ -132,3 +132,55 @@ export async function api<T = unknown>(endpoint: string, options: RequestOptions
   if (response.status === 204) return undefined as T;
   return response.json();
 }
+
+/**
+ * Upload a file via multipart/form-data.
+ * Used for thumbnail upload to R2.
+ */
+export async function apiUpload<T = unknown>(endpoint: string, file: File, fieldName = 'file'): Promise<T> {
+  const { accessToken } = getTokens();
+
+  const formData = new FormData();
+  formData.append(fieldName, file);
+
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+  // Note: do NOT set Content-Type — browser will set it with boundary for multipart
+
+  let response = await fetch(`${API_URL}${endpoint}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (response.status === 401 && accessToken) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      const { accessToken: newToken } = getTokens();
+      headers['Authorization'] = `Bearer ${newToken}`;
+      response = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+    } else {
+      clearTokens();
+      clearStoredUser();
+      window.location.href = '/admin/login';
+      throw new ApiError('Sessão expirada. Faça login novamente.', 401);
+    }
+  }
+
+  if (!response.ok) {
+    let msg = 'Erro no upload';
+    try {
+      const raw = await response.json();
+      if (raw.error) msg = raw.error.message || msg;
+    } catch { /* ignore */ }
+    throw new ApiError(msg, response.status);
+  }
+
+  return response.json();
+}

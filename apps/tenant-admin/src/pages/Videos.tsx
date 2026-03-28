@@ -14,6 +14,11 @@ interface Video {
   createdAt: string;
 }
 
+interface CategoryOption {
+  id: string;
+  name: string;
+}
+
 interface Pagination {
   page: number;
   limit: number;
@@ -27,14 +32,32 @@ export function VideosPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+
+  // Category options for filter
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+
+  useEffect(() => {
+    api<{ data: CategoryOption[] }>('/api/v1/content/categories?limit=100')
+      .then((res) => setCategories(res.data))
+      .catch(() => {});
+  }, []);
 
   const loadVideos = useCallback(async (page = 1) => {
     setLoading(true);
+    setSelectedIds(new Set());
     try {
       const params = new URLSearchParams({ page: String(page), limit: '24' });
       if (search) params.set('search', search);
       if (statusFilter) params.set('status', statusFilter);
+      if (categoryFilter) params.set('category_id', categoryFilter);
+      if (sortBy) params.set('sort', sortBy);
 
       const data = await api<{ data: Video[]; pagination: Pagination }>(`/api/v1/content/videos?${params}`);
       setVideos(data.data);
@@ -44,7 +67,7 @@ export function VideosPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter]);
+  }, [search, statusFilter, categoryFilter, sortBy]);
 
   useEffect(() => {
     loadVideos();
@@ -63,18 +86,48 @@ export function VideosPage() {
     }
   };
 
-  const statusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      published: 'bg-green-900/30 text-green-400 border-green-800/50',
-      draft: 'bg-yellow-900/30 text-yellow-400 border-yellow-800/50',
-      archived: 'bg-gray-800 text-gray-400 border-gray-700',
+  // Bulk operations
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === videos.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(videos.map((v) => v.id)));
+    }
+  };
+
+  const handleBulkAction = async (action: 'publish' | 'draft' | 'archive' | 'delete') => {
+    if (selectedIds.size === 0) return;
+    const actionLabels: Record<string, string> = {
+      publish: 'publicar',
+      draft: 'mover para rascunho',
+      archive: 'arquivar',
+      delete: 'excluir',
     };
-    const labels: Record<string, string> = {
-      published: 'Publicado',
-      draft: 'Rascunho',
-      archived: 'Arquivado',
-    };
-    return `<span class="inline-flex px-2 py-0.5 text-xs rounded-full border ${colors[status] ?? colors.draft}">${labels[status] ?? status}</span>`;
+    if (!confirm(`Tem certeza que deseja ${actionLabels[action]} ${selectedIds.size} vídeo(s)?`)) return;
+
+    setBulkLoading(true);
+    try {
+      const result = await api<{ success: number; failed: number }>('/api/v1/content/videos/bulk', {
+        method: 'POST',
+        body: { ids: [...selectedIds], action },
+      });
+      alert(`${result.success} vídeo(s) processado(s) com sucesso${result.failed > 0 ? `, ${result.failed} falha(s)` : ''}`);
+      setSelectedIds(new Set());
+      loadVideos(pagination.page);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro na operação em lote');
+    } finally {
+      setBulkLoading(false);
+    }
   };
 
   return (
@@ -90,7 +143,7 @@ export function VideosPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <input
           type="text"
           value={search}
@@ -109,6 +162,26 @@ export function VideosPage() {
           <option value="draft">Rascunho</option>
           <option value="archived">Arquivado</option>
         </select>
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+        >
+          <option value="">Todas as categorias</option>
+          {categories.map((cat) => (
+            <option key={cat.id} value={cat.id}>{cat.name}</option>
+          ))}
+        </select>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+        >
+          <option value="newest">Mais recentes</option>
+          <option value="oldest">Mais antigos</option>
+          <option value="views">Mais vistos</option>
+          <option value="title">Título A-Z</option>
+        </select>
         <button
           onClick={() => loadVideos()}
           className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-sm transition-colors"
@@ -116,6 +189,45 @@ export function VideosPage() {
           Buscar
         </button>
       </div>
+
+      {/* Bulk Actions Bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 p-3 bg-purple-900/20 border border-purple-800/30 rounded-lg">
+          <span className="text-sm text-purple-300 font-medium">
+            {selectedIds.size} selecionado(s)
+          </span>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={() => handleBulkAction('publish')}
+              disabled={bulkLoading}
+              className="px-3 py-1.5 bg-green-900/40 hover:bg-green-900/60 text-green-400 text-xs rounded-lg transition-colors disabled:opacity-50"
+            >
+              Publicar
+            </button>
+            <button
+              onClick={() => handleBulkAction('draft')}
+              disabled={bulkLoading}
+              className="px-3 py-1.5 bg-yellow-900/40 hover:bg-yellow-900/60 text-yellow-400 text-xs rounded-lg transition-colors disabled:opacity-50"
+            >
+              Rascunho
+            </button>
+            <button
+              onClick={() => handleBulkAction('archive')}
+              disabled={bulkLoading}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded-lg transition-colors disabled:opacity-50"
+            >
+              Arquivar
+            </button>
+            <button
+              onClick={() => handleBulkAction('delete')}
+              disabled={bulkLoading}
+              className="px-3 py-1.5 bg-red-900/40 hover:bg-red-900/60 text-red-400 text-xs rounded-lg transition-colors disabled:opacity-50"
+            >
+              Excluir
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
@@ -133,6 +245,14 @@ export function VideosPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800 text-left">
+                  <th className="px-4 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === videos.length && videos.length > 0}
+                      onChange={toggleSelectAll}
+                      className="rounded border-gray-600 bg-gray-800 text-purple-600 focus:ring-purple-500/50"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Vídeo</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Status</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Duração</th>
@@ -142,7 +262,15 @@ export function VideosPage() {
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {videos.map((video) => (
-                  <tr key={video.id} className="hover:bg-gray-800/50">
+                  <tr key={video.id} className={`hover:bg-gray-800/50 ${selectedIds.has(video.id) ? 'bg-purple-900/10' : ''}`}>
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(video.id)}
+                        onChange={() => toggleSelect(video.id)}
+                        className="rounded border-gray-600 bg-gray-800 text-purple-600 focus:ring-purple-500/50"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-16 h-10 bg-gray-800 rounded overflow-hidden shrink-0">

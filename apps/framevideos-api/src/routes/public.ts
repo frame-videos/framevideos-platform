@@ -18,6 +18,15 @@ function paginationParams(c: { req: { query: (k: string) => string | undefined }
   return { page, limit, offset };
 }
 
+function decodeCursor(cursor: string | undefined): string | null {
+  if (!cursor) return null;
+  try { return atob(cursor); } catch { return null; }
+}
+
+function encodeCursor(id: string): string {
+  return btoa(id);
+}
+
 async function getTenantLocale(db: D1Client, tenantId: string): Promise<string> {
   const tenant = await db.queryOne<{ default_locale: string }>(
     'SELECT default_locale FROM tenants WHERE id = ? AND status IN (\'active\', \'trial\')',
@@ -27,7 +36,7 @@ async function getTenantLocale(db: D1Client, tenantId: string): Promise<string> 
   return tenant.default_locale ?? 'pt_BR';
 }
 
-// ─── GET /public/:tenantId/videos ────────────────────────────────────────────
+// ─── GET /public/:tenantId/videos — supports offset + cursor pagination ──────
 
 publicRoutes.get('/:tenantId/videos', async (c) => {
   const tenantId = c.req.param('tenantId');
@@ -35,11 +44,16 @@ publicRoutes.get('/:tenantId/videos', async (c) => {
   const locale = await getTenantLocale(db, tenantId);
   const { page, limit, offset } = paginationParams(c);
 
+  const cursorParam = c.req.query('cursor');
+  const cursorId = decodeCursor(cursorParam);
+  const useCursor = Boolean(cursorParam);
+
   const search = c.req.query('search');
   const categorySlug = c.req.query('category');
   const tagSlug = c.req.query('tag');
   const performerSlug = c.req.query('performer');
   const channelSlug = c.req.query('channel');
+  const sort = c.req.query('sort') ?? 'newest';
 
   let where = "v.tenant_id = ? AND v.status = 'published'";
   const params: unknown[] = [tenantId];
@@ -69,13 +83,33 @@ publicRoutes.get('/:tenantId/videos', async (c) => {
     params.push(channelSlug, tenantId);
   }
 
+  if (useCursor && cursorId) {
+    if (sort === 'oldest') {
+      where += ' AND v.id > ?';
+    } else {
+      where += ' AND v.id < ?';
+    }
+    params.push(cursorId);
+  }
+
+  // Count total (without cursor filter)
+  const countWhere = where.replace(/ AND v\.id [<>] \?$/, '');
+  const countParams = useCursor && cursorId ? params.slice(0, -1) : [...params];
   const countResult = await db.queryOne<{ total: number }>(
     `SELECT COUNT(*) as total FROM videos v
      LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?
-     WHERE ${where}`,
-    [locale, ...params],
+     WHERE ${countWhere}`,
+    [locale, ...countParams],
   );
   const total = countResult?.total ?? 0;
+
+  let orderBy = 'v.created_at DESC, v.id DESC';
+  switch (sort) {
+    case 'oldest': orderBy = 'v.created_at ASC, v.id ASC'; break;
+    case 'views': orderBy = 'v.view_count DESC, v.id DESC'; break;
+    case 'title': orderBy = 'vt.title ASC, v.id ASC'; break;
+    default: orderBy = 'v.created_at DESC, v.id DESC';
+  }
 
   const videos = await db.query<{
     id: string; slug: string; duration_seconds: number | null;
@@ -94,10 +128,14 @@ publicRoutes.get('/:tenantId/videos', async (c) => {
      FROM videos v
      LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?
      WHERE ${where}
-     ORDER BY v.created_at DESC
+     ORDER BY ${orderBy}
      LIMIT ? OFFSET ?`,
-    [locale, locale, ...params, limit, offset],
+    [locale, locale, ...params, limit, useCursor ? 0 : offset],
   );
+
+  const lastItem = videos[videos.length - 1];
+  const nextCursor = lastItem ? encodeCursor(lastItem.id) : null;
+  const hasMore = videos.length === limit;
 
   return c.json({
     data: videos.map((v) => ({
@@ -112,7 +150,9 @@ publicRoutes.get('/:tenantId/videos', async (c) => {
       publishedAt: v.published_at,
       channelName: v.channel_name,
     })),
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: useCursor
+      ? { cursor: nextCursor, hasMore, total, limit }
+      : { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
 });
 

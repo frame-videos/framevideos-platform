@@ -43,6 +43,41 @@ function paginationParams(c: { req: { query: (k: string) => string | undefined }
   return { page, limit, offset };
 }
 
+/** Decode cursor (base64 of last ULID) */
+function decodeCursor(cursor: string | undefined): string | null {
+  if (!cursor) return null;
+  try {
+    return atob(cursor);
+  } catch {
+    return null;
+  }
+}
+
+/** Encode cursor from ULID */
+function encodeCursor(id: string): string {
+  return btoa(id);
+}
+
+// ─── Upload constants ────────────────────────────────────────────────────────
+
+const ALLOWED_UPLOAD_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
+
+const UPLOAD_MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+
+const MIME_TO_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+
+const STORAGE_PUBLIC_URL = 'https://storage.framevideos.com';
+
 async function ensureUniqueSlug(
   db: D1Client,
   table: string,
@@ -75,6 +110,101 @@ async function ensureUniqueSlug(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// UPLOAD (R2)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// POST /content/upload — multipart/form-data image upload to R2
+content.post('/upload', async (c) => {
+  const tenantId = c.get('tenantId')!;
+
+  const contentType = c.req.header('content-type') ?? '';
+  if (!contentType.includes('multipart/form-data')) {
+    throw new ValidationError('Content-Type deve ser multipart/form-data');
+  }
+
+  const formData = await c.req.formData();
+  const file = formData.get('file');
+
+  if (!file || typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== 'function') {
+    throw new ValidationError('Campo "file" é obrigatório');
+  }
+
+  // Cast to File-like object (Cloudflare Workers FormData)
+  const uploadFile = file as unknown as { name: string; type: string; size: number; arrayBuffer(): Promise<ArrayBuffer> };
+
+  // Validate MIME type
+  if (!ALLOWED_UPLOAD_TYPES.has(uploadFile.type)) {
+    throw new ValidationError(
+      `Tipo de arquivo não permitido: ${uploadFile.type}. Aceitos: ${[...ALLOWED_UPLOAD_TYPES].join(', ')}`,
+    );
+  }
+
+  // Validate size
+  if (uploadFile.size > UPLOAD_MAX_SIZE) {
+    throw new ValidationError(`Arquivo muito grande (${(uploadFile.size / 1024 / 1024).toFixed(1)}MB). Máximo: 5MB`);
+  }
+
+  const ext = MIME_TO_EXT[uploadFile.type] ?? 'bin';
+  const fileId = generateUlid();
+  const r2Key = `tenants/${tenantId}/thumbnails/${fileId}.${ext}`;
+
+  // Upload to R2
+  const arrayBuffer = await uploadFile.arrayBuffer();
+  await c.env.STORAGE.put(r2Key, arrayBuffer, {
+    httpMetadata: {
+      contentType: uploadFile.type,
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+    customMetadata: {
+      tenantId,
+      originalName: uploadFile.name,
+      uploadedAt: new Date().toISOString(),
+    },
+  });
+
+  const publicUrl = `${STORAGE_PUBLIC_URL}/${r2Key}`;
+
+  return c.json({
+    key: r2Key,
+    url: publicUrl,
+    size: uploadFile.size,
+    contentType: uploadFile.type,
+  }, 201);
+});
+
+// GET /content/upload/:key+ — generate signed/public URL for a stored object
+content.get('/upload/*', async (c) => {
+  const tenantId = c.get('tenantId')!;
+  const key = c.req.path.replace('/content/upload/', '');
+
+  if (!key) {
+    throw new ValidationError('Key é obrigatório');
+  }
+
+  // Security: only allow access to own tenant's files
+  if (!key.startsWith(`tenants/${tenantId}/`)) {
+    throw new ForbiddenError('Acesso negado a este arquivo');
+  }
+
+  // Check if object exists
+  const head = await c.env.STORAGE.head(key);
+  if (!head) {
+    throw new NotFoundError('File', key);
+  }
+
+  // Return public URL (R2 custom domain or direct URL)
+  const publicUrl = `${STORAGE_PUBLIC_URL}/${key}`;
+
+  return c.json({
+    key,
+    url: publicUrl,
+    size: head.size,
+    contentType: head.httpMetadata?.contentType ?? 'application/octet-stream',
+    uploaded: head.uploaded.toISOString(),
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // VIDEOS
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -95,14 +225,29 @@ const createVideoSchema = z.object({
 
 const updateVideoSchema = createVideoSchema.partial();
 
-// GET /content/videos
+// GET /content/videos — supports offset + cursor-based pagination, advanced filters, sorting
 content.get('/videos', async (c) => {
   const tenantId = c.get('tenantId')!;
   const db = new D1Client(c.env.DB);
   const { page, limit, offset } = paginationParams(c);
+
+  // Cursor-based pagination (takes priority if provided)
+  const cursorParam = c.req.query('cursor');
+  const cursorId = decodeCursor(cursorParam);
+  const useCursor = Boolean(cursorParam);
+
+  // Filters
   const status = c.req.query('status');
   const search = c.req.query('search');
   const categoryId = c.req.query('category_id');
+  const tagId = c.req.query('tag_id');
+  const performerId = c.req.query('performer_id');
+  const channelId = c.req.query('channel_id');
+  const dateFrom = c.req.query('date_from');
+  const dateTo = c.req.query('date_to');
+
+  // Sorting
+  const sort = c.req.query('sort') ?? 'newest';
 
   let where = 'v.tenant_id = ?';
   const params: unknown[] = [tenantId];
@@ -122,19 +267,67 @@ content.get('/videos', async (c) => {
     params.push(categoryId);
   }
 
+  if (tagId) {
+    where += ' AND EXISTS (SELECT 1 FROM video_tags vtg WHERE vtg.video_id = v.id AND vtg.tag_id = ?)';
+    params.push(tagId);
+  }
+
+  if (performerId) {
+    where += ' AND EXISTS (SELECT 1 FROM video_performers vp WHERE vp.video_id = v.id AND vp.performer_id = ?)';
+    params.push(performerId);
+  }
+
+  if (channelId) {
+    where += ' AND EXISTS (SELECT 1 FROM video_channels vch WHERE vch.video_id = v.id AND vch.channel_id = ?)';
+    params.push(channelId);
+  }
+
+  if (dateFrom) {
+    where += ' AND v.created_at >= ?';
+    params.push(dateFrom);
+  }
+
+  if (dateTo) {
+    where += ' AND v.created_at <= ?';
+    params.push(dateTo);
+  }
+
+  // Cursor filter (ULID is lexicographically sortable)
+  if (useCursor && cursorId) {
+    if (sort === 'oldest') {
+      where += ' AND v.id > ?';
+    } else {
+      // For newest (default), views, title — use id < cursor for next page
+      where += ' AND v.id < ?';
+    }
+    params.push(cursorId);
+  }
+
   const tenant = await db.queryOne<{ default_locale: string }>(
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
   const locale = tenant?.default_locale ?? 'pt_BR';
 
+  // Count total (without cursor filter for accurate total)
+  const countWhere = where.replace(/ AND v\.id [<>] \?$/, '');
+  const countParams = useCursor && cursorId ? params.slice(0, -1) : [...params];
   const countResult = await db.queryOne<{ total: number }>(
     `SELECT COUNT(*) as total FROM videos v
      LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?
-     WHERE ${where}`,
-    [locale, ...params],
+     WHERE ${countWhere}`,
+    [locale, ...countParams],
   );
   const total = countResult?.total ?? 0;
+
+  // Order clause
+  let orderBy = 'v.created_at DESC, v.id DESC';
+  switch (sort) {
+    case 'oldest': orderBy = 'v.created_at ASC, v.id ASC'; break;
+    case 'views': orderBy = 'v.view_count DESC, v.id DESC'; break;
+    case 'title': orderBy = 'vt.title ASC, v.id ASC'; break;
+    default: orderBy = 'v.created_at DESC, v.id DESC';
+  }
 
   const videos = await db.query<{
     id: string;
@@ -158,28 +351,37 @@ content.get('/videos', async (c) => {
      FROM videos v
      LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?
      WHERE ${where}
-     ORDER BY v.created_at DESC
+     ORDER BY ${orderBy}
      LIMIT ? OFFSET ?`,
-    [locale, ...params, limit, offset],
+    [locale, ...params, limit, useCursor ? 0 : offset],
   );
 
+  const mapped = videos.map((v) => ({
+    id: v.id,
+    slug: v.slug,
+    title: v.title ?? '(sem título)',
+    description: v.description ?? '',
+    status: v.status,
+    durationSeconds: v.duration_seconds,
+    thumbnailUrl: v.thumbnail_url,
+    videoUrl: v.video_url,
+    embedUrl: v.embed_url,
+    viewCount: v.view_count,
+    isFeatured: v.is_featured === 1,
+    publishedAt: v.published_at,
+    createdAt: v.created_at,
+  }));
+
+  // Build cursor-based pagination response
+  const lastItem = videos[videos.length - 1];
+  const nextCursor = lastItem ? encodeCursor(lastItem.id) : null;
+  const hasMore = videos.length === limit;
+
   return c.json({
-    data: videos.map((v) => ({
-      id: v.id,
-      slug: v.slug,
-      title: v.title ?? '(sem título)',
-      description: v.description ?? '',
-      status: v.status,
-      durationSeconds: v.duration_seconds,
-      thumbnailUrl: v.thumbnail_url,
-      videoUrl: v.video_url,
-      embedUrl: v.embed_url,
-      viewCount: v.view_count,
-      isFeatured: v.is_featured === 1,
-      publishedAt: v.published_at,
-      createdAt: v.created_at,
-    })),
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    data: mapped,
+    pagination: useCursor
+      ? { cursor: nextCursor, hasMore, total, limit }
+      : { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
 });
 
@@ -506,6 +708,87 @@ content.delete('/videos/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// ─── Bulk Operations ─────────────────────────────────────────────────────────
+
+const bulkVideoActionSchema = z.object({
+  ids: z.array(z.string()).min(1).max(50, 'Máximo de 50 itens por vez'),
+  action: z.enum(['publish', 'draft', 'archive', 'delete']),
+});
+
+// POST /content/videos/bulk
+content.post('/videos/bulk', async (c) => {
+  const tenantId = c.get('tenantId')!;
+  const body = await c.req.json();
+  const parsed = bulkVideoActionSchema.safeParse(body);
+
+  if (!parsed.success) {
+    throw new ValidationError('Dados inválidos', parsed.error.issues.map((i) => ({
+      field: i.path.join('.'),
+      message: i.message,
+    })));
+  }
+
+  const { ids, action } = parsed.data;
+  const db = new D1Client(c.env.DB);
+
+  let success = 0;
+  let failed = 0;
+
+  if (action === 'delete') {
+    // Delete videos that belong to this tenant
+    for (const videoId of ids) {
+      try {
+        const existing = await db.queryOne<{ id: string }>(
+          'SELECT id FROM videos WHERE id = ? AND tenant_id = ?',
+          [videoId, tenantId],
+        );
+        if (existing) {
+          await db.execute('DELETE FROM videos WHERE id = ?', [videoId]);
+          success++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+  } else {
+    // Map action to status
+    const statusMap: Record<string, string> = {
+      publish: 'published',
+      draft: 'draft',
+      archive: 'archived',
+    };
+    const newStatus = statusMap[action]!;
+
+    for (const videoId of ids) {
+      try {
+        const existing = await db.queryOne<{ id: string; status: string }>(
+          'SELECT id, status FROM videos WHERE id = ? AND tenant_id = ?',
+          [videoId, tenantId],
+        );
+        if (existing) {
+          const updates = [`status = '${newStatus}'`];
+          if (newStatus === 'published' && existing.status !== 'published') {
+            updates.push("published_at = datetime('now')");
+          }
+          await db.execute(
+            `UPDATE videos SET ${updates.join(', ')} WHERE id = ?`,
+            [videoId],
+          );
+          success++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+  }
+
+  return c.json({ success, failed });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CATEGORIES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -521,17 +804,28 @@ const createCategorySchema = z.object({
 
 const updateCategorySchema = createCategorySchema.partial();
 
-// GET /content/categories
+// GET /content/categories — supports offset + cursor pagination
 content.get('/categories', async (c) => {
   const tenantId = c.get('tenantId')!;
   const db = new D1Client(c.env.DB);
   const { page, limit, offset } = paginationParams(c, 50);
+  const cursorParam = c.req.query('cursor');
+  const cursorId = decodeCursor(cursorParam);
+  const useCursor = Boolean(cursorParam);
 
   const tenant = await db.queryOne<{ default_locale: string }>(
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
   const locale = tenant?.default_locale ?? 'pt_BR';
+
+  let where = 'c.tenant_id = ?';
+  const params: unknown[] = [tenantId];
+
+  if (useCursor && cursorId) {
+    where += ' AND c.id > ?';
+    params.push(cursorId);
+  }
 
   const countResult = await db.queryOne<{ total: number }>(
     'SELECT COUNT(*) as total FROM categories WHERE tenant_id = ?',
@@ -547,11 +841,13 @@ content.get('/categories', async (c) => {
             ct.name, ct.description
      FROM categories c
      LEFT JOIN category_translations ct ON ct.category_id = c.id AND ct.locale = ?
-     WHERE c.tenant_id = ?
+     WHERE ${where}
      ORDER BY c.sort_order ASC, c.created_at ASC
      LIMIT ? OFFSET ?`,
-    [locale, tenantId, limit, offset],
+    [locale, ...params, limit, useCursor ? 0 : offset],
   );
+
+  const lastItem = categories[categories.length - 1];
 
   return c.json({
     data: categories.map((cat) => ({
@@ -564,7 +860,9 @@ content.get('/categories', async (c) => {
       isActive: cat.is_active === 1,
       createdAt: cat.created_at,
     })),
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: useCursor
+      ? { cursor: lastItem ? encodeCursor(lastItem.id) : null, hasMore: categories.length === limit, total, limit }
+      : { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
 });
 
@@ -719,12 +1017,15 @@ const bulkCreateTagsSchema = z.object({
   names: z.array(z.string().min(1).max(100)).min(1).max(50),
 });
 
-// GET /content/tags
+// GET /content/tags — supports offset + cursor pagination
 content.get('/tags', async (c) => {
   const tenantId = c.get('tenantId')!;
   const db = new D1Client(c.env.DB);
   const { page, limit, offset } = paginationParams(c, 50);
   const search = c.req.query('search');
+  const cursorParam = c.req.query('cursor');
+  const cursorId = decodeCursor(cursorParam);
+  const useCursor = Boolean(cursorParam);
 
   const tenant = await db.queryOne<{ default_locale: string }>(
     'SELECT default_locale FROM tenants WHERE id = ?',
@@ -740,11 +1041,18 @@ content.get('/tags', async (c) => {
     params.push(`%${search}%`);
   }
 
+  if (useCursor && cursorId) {
+    where += ' AND t.id > ?';
+    params.push(cursorId);
+  }
+
+  const countWhere = where.replace(/ AND t\.id > \?$/, '');
+  const countParams = useCursor && cursorId ? params.slice(0, -1) : [...params];
   const countResult = await db.queryOne<{ total: number }>(
     `SELECT COUNT(*) as total FROM tags t
      LEFT JOIN tag_translations tt ON tt.tag_id = t.id AND tt.locale = ?
-     WHERE ${where}`,
-    [locale, ...params],
+     WHERE ${countWhere}`,
+    [locale, ...countParams],
   );
   const total = countResult?.total ?? 0;
 
@@ -757,12 +1065,16 @@ content.get('/tags', async (c) => {
      WHERE ${where}
      ORDER BY tt.name ASC
      LIMIT ? OFFSET ?`,
-    [locale, ...params, limit, offset],
+    [locale, ...params, limit, useCursor ? 0 : offset],
   );
+
+  const lastItem = tags[tags.length - 1];
 
   return c.json({
     data: tags.map((t) => ({ id: t.id, slug: t.slug, name: t.name ?? t.slug, createdAt: t.created_at })),
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: useCursor
+      ? { cursor: lastItem ? encodeCursor(lastItem.id) : null, hasMore: tags.length === limit, total, limit }
+      : { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
 });
 
@@ -876,17 +1188,28 @@ const createPerformerSchema = z.object({
 
 const updatePerformerSchema = createPerformerSchema.partial();
 
-// GET /content/performers
+// GET /content/performers — supports offset + cursor pagination
 content.get('/performers', async (c) => {
   const tenantId = c.get('tenantId')!;
   const db = new D1Client(c.env.DB);
   const { page, limit, offset } = paginationParams(c, 50);
+  const cursorParam = c.req.query('cursor');
+  const cursorId = decodeCursor(cursorParam);
+  const useCursor = Boolean(cursorParam);
 
   const tenant = await db.queryOne<{ default_locale: string }>(
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
   const locale = tenant?.default_locale ?? 'pt_BR';
+
+  let where = 'p.tenant_id = ?';
+  const params: unknown[] = [tenantId];
+
+  if (useCursor && cursorId) {
+    where += ' AND p.id > ?';
+    params.push(cursorId);
+  }
 
   const countResult = await db.queryOne<{ total: number }>(
     'SELECT COUNT(*) as total FROM performers WHERE tenant_id = ?',
@@ -901,11 +1224,13 @@ content.get('/performers', async (c) => {
     `SELECT p.id, p.slug, p.image_url, p.is_active, p.created_at, pt.name, pt.bio
      FROM performers p
      LEFT JOIN performer_translations pt ON pt.performer_id = p.id AND pt.locale = ?
-     WHERE p.tenant_id = ?
+     WHERE ${where}
      ORDER BY pt.name ASC
      LIMIT ? OFFSET ?`,
-    [locale, tenantId, limit, offset],
+    [locale, ...params, limit, useCursor ? 0 : offset],
   );
+
+  const lastItem = performers[performers.length - 1];
 
   return c.json({
     data: performers.map((p) => ({
@@ -917,7 +1242,9 @@ content.get('/performers', async (c) => {
       isActive: p.is_active === 1,
       createdAt: p.created_at,
     })),
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: useCursor
+      ? { cursor: lastItem ? encodeCursor(lastItem.id) : null, hasMore: performers.length === limit, total, limit }
+      : { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
 });
 
@@ -1066,17 +1393,28 @@ const createChannelSchema = z.object({
 
 const updateChannelSchema = createChannelSchema.partial();
 
-// GET /content/channels
+// GET /content/channels — supports offset + cursor pagination
 content.get('/channels', async (c) => {
   const tenantId = c.get('tenantId')!;
   const db = new D1Client(c.env.DB);
   const { page, limit, offset } = paginationParams(c, 50);
+  const cursorParam = c.req.query('cursor');
+  const cursorId = decodeCursor(cursorParam);
+  const useCursor = Boolean(cursorParam);
 
   const tenant = await db.queryOne<{ default_locale: string }>(
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
   const locale = tenant?.default_locale ?? 'pt_BR';
+
+  let where = 'ch.tenant_id = ?';
+  const params: unknown[] = [tenantId];
+
+  if (useCursor && cursorId) {
+    where += ' AND ch.id > ?';
+    params.push(cursorId);
+  }
 
   const countResult = await db.queryOne<{ total: number }>(
     'SELECT COUNT(*) as total FROM channels WHERE tenant_id = ?',
@@ -1091,11 +1429,13 @@ content.get('/channels', async (c) => {
     `SELECT ch.id, ch.slug, ch.logo_url, ch.is_active, ch.created_at, cht.name, cht.description
      FROM channels ch
      LEFT JOIN channel_translations cht ON cht.channel_id = ch.id AND cht.locale = ?
-     WHERE ch.tenant_id = ?
+     WHERE ${where}
      ORDER BY cht.name ASC
      LIMIT ? OFFSET ?`,
-    [locale, tenantId, limit, offset],
+    [locale, ...params, limit, useCursor ? 0 : offset],
   );
+
+  const lastItem = channels[channels.length - 1];
 
   return c.json({
     data: channels.map((ch) => ({
@@ -1107,7 +1447,9 @@ content.get('/channels', async (c) => {
       isActive: ch.is_active === 1,
       createdAt: ch.created_at,
     })),
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: useCursor
+      ? { cursor: lastItem ? encodeCursor(lastItem.id) : null, hasMore: channels.length === limit, total, limit }
+      : { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
 });
 

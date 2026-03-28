@@ -552,9 +552,9 @@ function layout(
           </nav>
         </div>
         <div class="flex items-center gap-3">
-          <form action="/videos" method="GET" class="hidden sm:block">
+          <form action="/search" method="GET" class="hidden sm:block">
             <div class="relative">
-              <input type="text" name="search" placeholder="Buscar vídeos..." class="w-48 lg:w-64 pl-9 pr-3 py-1.5 bg-gray-800/80 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500" />
+              <input type="text" name="q" placeholder="Buscar vídeos..." class="w-48 lg:w-64 pl-9 pr-3 py-1.5 bg-gray-800/80 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500" />
               <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
             </div>
           </form>
@@ -564,8 +564,8 @@ function layout(
         </div>
       </div>
       <div id="mobile-menu" class="md:hidden hidden pb-4">
-        <form action="/videos" method="GET" class="mb-3 sm:hidden">
-          <input type="text" name="search" placeholder="Buscar vídeos..." class="w-full pl-3 pr-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+        <form action="/search" method="GET" class="mb-3 sm:hidden">
+          <input type="text" name="q" placeholder="Buscar vídeos..." class="w-full pl-3 pr-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
         </form>
         <nav class="flex flex-col gap-1">
           ${navLink('/', 'Início')}
@@ -730,19 +730,24 @@ async function renderVideoPage(db: D1Database, tenant: TenantInfo, settings: Sit
   const dur = formatDuration(video.duration_seconds);
   const views = formatViews(video.view_count);
 
-  // Player
+  // Player — improved with responsive container and better embed handling
   let playerHtml = '';
   if (video.embed_url) {
-    playerHtml = `<div class="aspect-video bg-black rounded-lg overflow-hidden mb-4">
-      <iframe src="${esc(video.embed_url)}" class="w-full h-full" allowfullscreen allow="autoplay; encrypted-media" frameborder="0"></iframe>
+    playerHtml = `<div class="relative aspect-video bg-black rounded-xl overflow-hidden mb-4 shadow-2xl shadow-black/50 ring-1 ring-gray-800">
+      <iframe src="${esc(video.embed_url)}" class="absolute inset-0 w-full h-full" allowfullscreen allow="autoplay; encrypted-media; fullscreen; picture-in-picture" frameborder="0" loading="lazy"></iframe>
     </div>`;
   } else if (video.video_url) {
-    playerHtml = `<div class="aspect-video bg-black rounded-lg overflow-hidden mb-4">
-      <video src="${esc(video.video_url)}" class="w-full h-full" controls ${video.thumbnail_url ? `poster="${esc(video.thumbnail_url)}"` : ''}></video>
+    playerHtml = `<div class="relative aspect-video bg-black rounded-xl overflow-hidden mb-4 shadow-2xl shadow-black/50 ring-1 ring-gray-800">
+      <video src="${esc(video.video_url)}" class="absolute inset-0 w-full h-full" controls playsinline preload="metadata" ${video.thumbnail_url ? `poster="${esc(video.thumbnail_url)}"` : ''}></video>
     </div>`;
   } else if (video.thumbnail_url) {
-    playerHtml = `<div class="aspect-video bg-black rounded-lg overflow-hidden mb-4 flex items-center justify-center">
+    playerHtml = `<div class="relative aspect-video bg-black rounded-xl overflow-hidden mb-4 shadow-2xl shadow-black/50 ring-1 ring-gray-800 flex items-center justify-center">
       <img src="${esc(video.thumbnail_url)}" alt="${esc(video.title)}" class="max-w-full max-h-full object-contain" />
+      <div class="absolute inset-0 flex items-center justify-center bg-black/30">
+        <div class="w-16 h-16 rounded-full bg-white/10 backdrop-blur flex items-center justify-center">
+          <svg class="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+      </div>
     </div>`;
   }
 
@@ -1095,6 +1100,70 @@ async function renderStaticPage(db: D1Database, tenant: TenantInfo, settings: Si
   });
 }
 
+// ─── Search Page ─────────────────────────────────────────────────────────────
+
+async function renderSearchPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, url: URL): Promise<string> {
+  const query = url.searchParams.get('q') ?? url.searchParams.get('search') ?? '';
+  const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+  const offset = (page - 1) * VIDEOS_PER_PAGE;
+
+  let content = '';
+
+  // Search form hero
+  content += `<section class="mb-8">
+    <h1 class="text-2xl font-bold mb-4">${query ? `Resultados para "${esc(query)}"` : 'Buscar Vídeos'}</h1>
+    <form action="/search" method="GET" class="max-w-2xl">
+      <div class="flex gap-2">
+        <div class="relative flex-1">
+          <input type="text" name="q" value="${esc(query)}" placeholder="Digite sua busca..." autofocus
+            class="w-full pl-10 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500" />
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        </div>
+        <button type="submit" class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors">
+          Buscar
+        </button>
+      </div>
+    </form>
+  </section>`;
+
+  if (query) {
+    const { videos, total } = await getVideos(db, tenant.tenantId, locale, {
+      limit: VIDEOS_PER_PAGE,
+      offset,
+      search: query,
+    });
+    const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
+
+    content += `<p class="text-gray-500 text-sm mb-4">${total} resultado${total !== 1 ? 's' : ''} encontrado${total !== 1 ? 's' : ''}</p>`;
+    content += videoGrid(videos);
+    content += pagination(page, totalPages, `/search?q=${encodeURIComponent(query)}`);
+  } else {
+    // Show popular tags as search suggestions
+    const tags = await getTags(db, tenant.tenantId, locale);
+    const topTags = tags.slice(0, 30);
+
+    if (topTags.length > 0) {
+      content += `<section class="mt-8">
+        <h2 class="text-lg font-semibold mb-4 text-gray-300">Tags Populares</h2>
+        <div class="flex flex-wrap gap-2">
+          ${topTags.map((t) => `<a href="/search?q=${encodeURIComponent(t.name)}" class="bg-gray-900 px-4 py-2 rounded-lg text-sm hover:bg-gray-800 hover:text-purple-400 transition-colors">
+            <span class="text-gray-400">#</span>${esc(t.name)}
+            <span class="text-xs text-gray-600 ml-1">(${t.videoCount})</span>
+          </a>`).join('')}
+        </div>
+      </section>`;
+    }
+  }
+
+  return layout(settings, {
+    title: query ? `Busca: ${query}` : 'Buscar',
+    description: query ? `Resultados da busca por "${query}"` : `Buscar vídeos em ${settings.siteName}`,
+    canonical: `https://${tenant.domain}/search`,
+    content,
+    activePath: '/search',
+  });
+}
+
 // ─── 404 Page ────────────────────────────────────────────────────────────────
 
 function render404Page(settings: SiteSettings | null, tenant: TenantInfo | null): string {
@@ -1124,6 +1193,7 @@ function matchRoute(pathname: string): { handler: string; params: Record<string,
   // Exact matches
   if (pathname === '/' || pathname === '') return { handler: 'home', params: {} };
   if (pathname === '/videos') return { handler: 'videos', params: {} };
+  if (pathname === '/search') return { handler: 'search', params: {} };
   if (pathname === '/categories') return { handler: 'categories', params: {} };
   if (pathname === '/performers') return { handler: 'performers', params: {} };
   if (pathname === '/tags') return { handler: 'tags', params: {} };
@@ -1223,6 +1293,9 @@ export default {
           break;
         case 'videos':
           html = await renderVideosPage(env.DB, tenant, settings, locale, url);
+          break;
+        case 'search':
+          html = await renderSearchPage(env.DB, tenant, settings, locale, url);
           break;
         case 'video':
           html = await renderVideoPage(env.DB, tenant, settings, locale, route.params.slug!);
