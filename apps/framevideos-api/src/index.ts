@@ -15,6 +15,10 @@ import { content } from './routes/content.js';
 import { publicRoutes } from './routes/public.js';
 import { credits } from './routes/credits.js';
 import { ai } from './routes/ai.js';
+import { analytics } from './routes/analytics.js';
+import { email } from './routes/email.js';
+import { newsletter } from './routes/newsletter.js';
+import { monitoring } from './routes/monitoring.js';
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -61,6 +65,10 @@ app.route('/api/v1/content', content);
 app.route('/api/v1/public', publicRoutes);
 app.route('/api/v1/credits', credits);
 app.route('/api/v1/ai', ai);
+app.route('/api/v1/analytics', analytics);
+app.route('/api/v1/email', email);
+app.route('/api/v1/newsletter', newsletter);
+app.route('/api/v1/monitoring', monitoring);
 
 // 404 catch-all
 app.notFound((c) => {

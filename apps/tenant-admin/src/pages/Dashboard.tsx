@@ -10,6 +10,13 @@ interface Stats {
   totalChannels: number;
 }
 
+interface AnalyticsSummary {
+  totalPageviews: number;
+  todayPageviews: number;
+  dailyPageviews: Array<{ date: string; count: number }>;
+  topPages: Array<{ path: string; count: number }>;
+}
+
 interface BalanceData {
   balance: number;
   totalCredited: number;
@@ -19,18 +26,20 @@ interface BalanceData {
 export function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [balance, setBalance] = useState<BalanceData | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const [videos, categories, tags, performers, channels, creditsData] = await Promise.all([
+        const [videos, categories, tags, performers, channels, creditsData, analyticsData] = await Promise.all([
           api<{ pagination: { total: number } }>('/api/v1/content/videos?limit=1'),
           api<{ pagination: { total: number } }>('/api/v1/content/categories?limit=1'),
           api<{ pagination: { total: number } }>('/api/v1/content/tags?limit=1'),
           api<{ pagination: { total: number } }>('/api/v1/content/performers?limit=1'),
           api<{ pagination: { total: number } }>('/api/v1/content/channels?limit=1'),
           api<BalanceData>('/api/v1/credits/balance').catch(() => null),
+          api<AnalyticsSummary>('/api/v1/analytics/dashboard').catch(() => null),
         ]);
         setStats({
           totalVideos: videos.pagination.total,
@@ -40,6 +49,7 @@ export function DashboardPage() {
           totalChannels: channels.pagination.total,
         });
         if (creditsData) setBalance(creditsData);
+        if (analyticsData) setAnalytics(analyticsData);
       } catch (err) {
         console.error('Failed to load stats:', err);
       } finally {
@@ -120,6 +130,71 @@ export function DashboardPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Analytics summary */}
+      {analytics && (
+        <div className="mt-6">
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">📈 Analytics (últimos 7 dias)</h2>
+              <a href="/admin/analytics" className="text-sm text-purple-400 hover:text-purple-300">
+                Ver tudo →
+              </a>
+            </div>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="bg-gray-800 rounded-lg p-3">
+                <p className="text-xs text-gray-400">Pageviews (30d)</p>
+                <p className="text-xl font-bold text-purple-400">{formatNumber(analytics.totalPageviews)}</p>
+              </div>
+              <div className="bg-gray-800 rounded-lg p-3">
+                <p className="text-xs text-gray-400">Hoje</p>
+                <p className="text-xl font-bold text-green-400">{formatNumber(analytics.todayPageviews)}</p>
+              </div>
+            </div>
+            {/* Mini daily chart (last 7 days) */}
+            {analytics.dailyPageviews.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 mb-2">Pageviews diários</p>
+                <div className="flex items-end gap-1 h-16">
+                  {[...analytics.dailyPageviews]
+                    .sort((a, b) => a.date.localeCompare(b.date))
+                    .slice(-7)
+                    .map((day) => {
+                      const maxCount = Math.max(
+                        ...analytics.dailyPageviews.slice(-7).map((d) => d.count),
+                        1,
+                      );
+                      const pct = (day.count / maxCount) * 100;
+                      return (
+                        <div key={day.date} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
+                          <div className="w-full bg-gray-800 rounded-t relative" style={{ height: '48px' }}>
+                            <div
+                              className="absolute bottom-0 w-full bg-purple-600 rounded-t"
+                              style={{ height: `${Math.max(pct, 5)}%` }}
+                            />
+                          </div>
+                          <span className="text-[8px] text-gray-600">{day.date.slice(5)}</span>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+            {/* Top pages preview */}
+            {analytics.topPages.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs text-gray-500 mb-1">Páginas mais visitadas</p>
+                {analytics.topPages.slice(0, 3).map((p, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs py-1">
+                    <span className="text-gray-300 truncate mr-2">{p.path}</span>
+                    <span className="text-gray-500 shrink-0">{formatNumber(p.count)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       <div className="mt-8 bg-gray-900 rounded-xl border border-gray-800 p-6">

@@ -13,6 +13,8 @@ import { ChannelsPage } from '@/pages/Channels';
 import { PagesPage } from '@/pages/Pages';
 import { PageFormPage } from '@/pages/PageForm';
 import { SettingsPage } from '@/pages/Settings';
+import { AnalyticsPage } from '@/pages/Analytics';
+import { MonitoringPage } from '@/pages/Monitoring';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore();
@@ -58,6 +60,8 @@ export function App() {
                   <Route path="pages/new" element={<PageFormPage />} />
                   <Route path="pages/:id/edit" element={<PageFormPage />} />
                   <Route path="settings" element={<SettingsPage />} />
+                  <Route path="analytics" element={<AnalyticsPage />} />
+                  <Route path="monitoring" element={<MonitoringPage />} />
                   <Route path="*" element={<Navigate to="/admin" replace />} />
                 </Routes>
               </AdminLayout>

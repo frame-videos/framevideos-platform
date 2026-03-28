@@ -745,6 +745,7 @@ function layout(
       if (sw && menu && !sw.contains(e.target)) menu.classList.add('hidden');
     });
   </script>
+  <script>!function(){try{var d={path:location.pathname,referrer:document.referrer||""};navigator.sendBeacon?navigator.sendBeacon("/api/track",JSON.stringify(d)):fetch("/api/track",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d),keepalive:!0}).catch(function(){})}catch(e){}}();</script>
   ${settings.customBodyScripts || ''}
 </body>
 </html>`;
@@ -1603,6 +1604,61 @@ export default {
         return new Response(render404Page(null, null), {
           status: 404,
           headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'public, max-age=60' },
+        });
+      }
+
+      // ─── Analytics tracking proxy ────────────────────────────────────
+      if (pathname === '/api/track' && request.method === 'POST') {
+        try {
+          const body = await request.json() as { path?: string; referrer?: string };
+          const userAgent = request.headers.get('user-agent') ?? '';
+          const country = (request as unknown as { cf?: { country?: string } }).cf?.country ?? '';
+
+          const trackPayload = {
+            path: body.path ?? '/',
+            referrer: body.referrer ?? '',
+            user_agent: userAgent,
+            tenant_id: tenant.tenantId,
+            country,
+          };
+
+          // Fire-and-forget to API (don't block response)
+          const apiUrl = env.ENVIRONMENT === 'production'
+            ? 'https://api.framevideos.com/api/v1/analytics/track'
+            : 'https://api-staging.framevideos.com/api/v1/analytics/track';
+
+          // Use waitUntil if available, otherwise just fire
+          const trackFetch = fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(trackPayload),
+          }).catch(() => {});
+
+          // In CF Workers we can use ctx.waitUntil but here we just await quickly
+          await trackFetch;
+        } catch {
+          // Never break on tracking errors
+        }
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST',
+            'Cache-Control': 'no-store',
+          },
+        });
+      }
+
+      // CORS preflight for /api/track
+      if (pathname === '/api/track' && request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Max-Age': '86400',
+          },
         });
       }
 
