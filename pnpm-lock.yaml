@@ -131,22 +131,19 @@ importers:
 
   apps/tenant-site:
     dependencies:
-      '@frame-videos/i18n':
-        specifier: workspace:*
-        version: link:../../packages/i18n
-      '@frame-videos/seo':
-        specifier: workspace:*
-        version: link:../../packages/seo
       '@frame-videos/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@frame-videos/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.20241205.0
+        version: 4.20260317.1
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      wrangler:
+        specifier: ^3.99.0
+        version: 3.114.17(@cloudflare/workers-types@4.20260317.1)
 
   packages/ads:
     dependencies:

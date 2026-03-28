@@ -35,7 +35,6 @@ id = "6be904ed61714310b45e04f7c181f1ba"
 name = "tenant-site"
 routes = [
   { pattern = "sites.framevideos.com/*", zone_name = "framevideos.com" },
-  { pattern = "*.framevideos.com/*", zone_name = "framevideos.com" },
 ]
 [env.production.vars]
 ENVIRONMENT = "production"
