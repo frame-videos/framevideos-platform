@@ -83,6 +83,13 @@ export function renderLoginPage(
     var email = document.getElementById('email').value;
     var password = document.getElementById('password').value;
 
+    if (password.length < 1) {
+      errEl.textContent = 'Informe sua senha.';
+      errEl.style.display = 'block';
+      btn.disabled = false; spinner.style.display = 'none'; btnText.textContent = 'Entrar';
+      return;
+    }
+
     fetch(apiBase + '/api/v1/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -91,7 +98,12 @@ export function renderLoginPage(
     .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
     .then(function(res){
       if (!res.ok) {
-        var msg = (res.data.error && res.data.error.message) || 'Erro ao fazer login';
+        var msg = 'Erro ao fazer login';
+        if (res.data.error) {
+          if (res.data.error.code === 'UNAUTHORIZED') msg = 'Email ou senha incorretos.';
+          else if (res.data.error.code === 'RATE_LIMITED') msg = 'Muitas tentativas. Aguarde alguns minutos.';
+          else if (res.data.error.message) msg = res.data.error.message;
+        }
         throw new Error(msg);
       }
       localStorage.setItem('admin_accessToken', res.data.tokens.accessToken);
@@ -104,7 +116,11 @@ export function renderLoginPage(
       }
     })
     .catch(function(err){
-      errEl.textContent = err.message;
+      var msg = err.message;
+      if (msg === 'Load failed' || msg === 'Failed to fetch' || msg === 'NetworkError when attempting to fetch resource.') {
+        msg = 'Erro de conexão. Verifique sua internet e tente novamente.';
+      }
+      errEl.textContent = msg;
       errEl.style.display = 'block';
       btn.disabled = false;
       spinner.style.display = 'none';
@@ -179,27 +195,59 @@ export function renderSignupPage(
     var email = document.getElementById('email').value;
     var password = document.getElementById('password').value;
 
+    // Client-side validation
+    if (name.length < 2) {
+      errEl.textContent = 'Nome deve ter pelo menos 2 caracteres.';
+      errEl.style.display = 'block';
+      btn.disabled = false; spinner.style.display = 'none'; btnText.textContent = 'Criar conta';
+      return;
+    }
+    if (password.length < 8) {
+      errEl.textContent = 'A senha deve ter pelo menos 8 caracteres.';
+      errEl.style.display = 'block';
+      btn.disabled = false; spinner.style.display = 'none'; btnText.textContent = 'Criar conta';
+      return;
+    }
+
     fetch(apiBase + '/api/v1/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
       body: JSON.stringify({ email: email, password: password, name: name, tenantId: tenantId })
     })
-    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, status: r.status, data: d }; }); })
     .then(function(res){
       if (!res.ok) {
-        var msg = (res.data.error && res.data.error.message) || 'Erro ao criar conta';
-        if (res.data.error && res.data.error.fields) {
-          msg = res.data.error.fields.map(function(f){ return f.message; }).join('. ');
+        var msg = 'Erro ao criar conta';
+        if (res.data.error) {
+          if (res.data.error.fields) {
+            var msgs = res.data.error.fields.map(function(f){
+              if (f.field === 'password') return 'A senha deve ter pelo menos 8 caracteres.';
+              if (f.field === 'email') return 'Email inválido.';
+              if (f.field === 'name') return 'Nome é obrigatório.';
+              return f.message;
+            });
+            msg = msgs.join(' ');
+          } else if (res.data.error.code === 'CONFLICT') {
+            msg = 'Já existe uma conta com este email.';
+          } else if (res.data.error.code === 'RATE_LIMITED') {
+            msg = 'Muitas tentativas. Aguarde alguns minutos.';
+          } else if (res.data.error.message) {
+            msg = res.data.error.message;
+          }
         }
         throw new Error(msg);
       }
       localStorage.setItem('admin_accessToken', res.data.tokens.accessToken);
       localStorage.setItem('admin_refreshToken', res.data.tokens.refreshToken);
       localStorage.setItem('admin_user', JSON.stringify(res.data.user));
-      window.location.href = '/admin';
+      window.location.href = '/';
     })
     .catch(function(err){
-      errEl.textContent = err.message;
+      var msg = err.message;
+      if (msg === 'Load failed' || msg === 'Failed to fetch' || msg === 'NetworkError when attempting to fetch resource.') {
+        msg = 'Erro de conexão. Verifique sua internet e tente novamente.';
+      }
+      errEl.textContent = msg;
       errEl.style.display = 'block';
       btn.disabled = false;
       spinner.style.display = 'none';

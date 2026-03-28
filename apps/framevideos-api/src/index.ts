@@ -41,7 +41,7 @@ app.use(
       return origin;
     },
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Tenant-Id'],
     exposeHeaders: ['X-Request-Id'],
     maxAge: 86400,
     credentials: true,

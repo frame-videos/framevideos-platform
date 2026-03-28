@@ -220,7 +220,7 @@ auth.post('/signup', signupRateLimit, async (c) => {
     // 1. Criar tenant
     {
       sql: `INSERT INTO tenants (id, name, slug, status, plan_id, owner_user_id, default_locale)
-            VALUES (?, ?, ?, 'trial', ?, ?, 'pt_BR')`,
+            VALUES (?, ?, ?, 'trial', ?, ?, 'pt')`,
       params: [tenantId, tenantName, tenantSlug, freePlan.id, userId],
     },
     // 2. Criar usuário (tenant_admin)

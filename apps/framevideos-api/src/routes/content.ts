@@ -287,7 +287,7 @@ content.get('/videos', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   // Count total (without cursor for accurate total)
   const total = await countQuery(
@@ -377,7 +377,7 @@ content.post('/videos', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const videoId = generateUlid();
   const translationId = generateUlid();
@@ -452,7 +452,7 @@ content.get('/videos/:id', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const video = await db.queryOne<{
     id: string; slug: string; status: string; duration_seconds: number | null;
@@ -552,7 +552,7 @@ content.put('/videos/:id', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const queries: Array<{ sql: string; params?: unknown[] }> = [];
 
@@ -789,7 +789,7 @@ content.get('/categories', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   let where = 'c.tenant_id = ?';
   const params: unknown[] = [tenantId];
@@ -858,7 +858,7 @@ content.post('/categories', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const categoryId = generateUlid();
   const translationId = generateUlid();
@@ -908,7 +908,7 @@ content.put('/categories/:id', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const queries: Array<{ sql: string; params?: unknown[] }> = [];
 
@@ -1003,7 +1003,7 @@ content.get('/tags', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   let where = 't.tenant_id = ?';
   const params: unknown[] = [tenantId];
@@ -1070,7 +1070,7 @@ content.post('/tags', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const tagId = generateUlid();
   const rawSlug = data.slug ? slugify(data.slug) : slugify(data.name);
@@ -1108,7 +1108,7 @@ content.post('/tags/bulk', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const created: Array<{ id: string; slug: string; name: string }> = [];
   const queries: Array<{ sql: string; params?: unknown[] }> = [];
@@ -1148,7 +1148,7 @@ content.put('/tags/:id', async (c) => {
   const tenant = await db.queryOne<{ default_locale: string }>(
     'SELECT default_locale FROM tenants WHERE id = ?', [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
   const queries: { sql: string; params: unknown[] }[] = [];
 
   if (slug) {
@@ -1218,7 +1218,7 @@ content.get('/performers', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   let where = 'p.tenant_id = ?';
   const params: unknown[] = [tenantId];
@@ -1284,7 +1284,7 @@ content.post('/performers', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const performerId = generateUlid();
   const rawSlug = data.slug ? slugify(data.slug) : slugify(data.name);
@@ -1331,7 +1331,7 @@ content.put('/performers/:id', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const queries: Array<{ sql: string; params?: unknown[] }> = [];
 
@@ -1423,7 +1423,7 @@ content.get('/channels', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   let where = 'ch.tenant_id = ?';
   const params: unknown[] = [tenantId];
@@ -1489,7 +1489,7 @@ content.post('/channels', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const channelId = generateUlid();
   const rawSlug = data.slug ? slugify(data.slug) : slugify(data.name);
@@ -1536,7 +1536,7 @@ content.put('/channels/:id', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const queries: Array<{ sql: string; params?: unknown[] }> = [];
 
@@ -1624,7 +1624,7 @@ content.get('/pages', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const pages = await db.query<{
     id: string; slug: string; is_published: number; created_at: string;
@@ -1670,7 +1670,7 @@ content.post('/pages', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const pageId = generateUlid();
   const rawSlug = data.slug ? slugify(data.slug) : slugify(data.title);
@@ -1717,7 +1717,7 @@ content.put('/pages/:id', async (c) => {
     'SELECT default_locale FROM tenants WHERE id = ?',
     [tenantId],
   );
-  const locale = tenant?.default_locale ?? 'pt_BR';
+  const locale = tenant?.default_locale ?? 'pt';
 
   const queries: Array<{ sql: string; params?: unknown[] }> = [];
 
@@ -2208,7 +2208,7 @@ for (const [contentType, config] of Object.entries(TRANSLATION_CONFIGS)) {
       'SELECT default_locale FROM tenants WHERE id = ?',
       [tenantId],
     );
-    const defaultLocale = tenant?.default_locale ?? 'pt_BR';
+    const defaultLocale = tenant?.default_locale ?? 'pt';
 
     // Check against both old and new locale formats
     const defaultRow = await db.queryOne<{ config_value: string }>(
