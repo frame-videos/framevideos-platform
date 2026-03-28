@@ -162,12 +162,12 @@ export default {
         return handleAdminRequest(pathname, env, tenant);
       }
 
-      // Route matching (handles locale prefix)
-      const route = matchRoute(pathname);
-
       // ─── Full-page KV cache (5 min for public pages) ───────────────
       const isPublicPage = !pathname.startsWith('/admin') && !pathname.startsWith('/advertiser') && request.method === 'GET';
-      const cacheKey = isPublicPage ? `page:${tenant.tenantId}:${pathname}:${request.headers.get('Accept-Language')?.split(',')[0] ?? 'default'}` : null;
+      // Route matching + cache key
+      const route = matchRoute(pathname);
+      const cacheLocale = route.locale ?? 'default';
+      const cacheKey = isPublicPage ? `page:${tenant.tenantId}:${cacheLocale}:${pathname}` : null;
 
       if (cacheKey) {
         const cachedHtml = await env.CACHE.get(cacheKey);
@@ -176,7 +176,7 @@ export default {
             headers: {
               'Content-Type': 'text/html;charset=UTF-8',
               'Cache-Control': 'public, max-age=60, s-maxage=300',
-              'Content-Language': locale,
+              'Content-Language': cacheLocale === 'default' ? 'pt' : cacheLocale,
               'X-Tenant-Id': tenant.tenantId,
               'X-Cache': 'HIT',
             },
@@ -302,9 +302,9 @@ export default {
         }));
       }
 
-      // Write to KV cache (non-blocking, 5 min TTL)
+      // Write to KV cache (5 min TTL)
       if (cacheKey && html) {
-        env.CACHE.put(cacheKey, html, { expirationTtl: 300 }).catch(() => {});
+        try { await env.CACHE.put(cacheKey, html, { expirationTtl: 300 }); } catch { /* ignore cache write errors */ }
       }
 
       return addSecurityHeaders(new Response(html, {
