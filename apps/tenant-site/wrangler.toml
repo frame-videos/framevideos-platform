@@ -1,0 +1,50 @@
+name = "tenant-site"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 — mesmo banco da API
+[[d1_databases]]
+binding = "DB"
+database_name = "frame-videos-db"
+database_id = "dae9bd51-c863-42b0-b5b6-21f4569aa6c9"
+
+# KV — cache de resolução de domínio
+[[kv_namespaces]]
+binding = "CACHE"
+id = "6be904ed61714310b45e04f7c181f1ba"
+
+[vars]
+ENVIRONMENT = "development"
+
+[env.staging]
+name = "tenant-site-staging"
+[env.staging.vars]
+ENVIRONMENT = "staging"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "frame-videos-db"
+database_id = "dae9bd51-c863-42b0-b5b6-21f4569aa6c9"
+
+[[env.staging.kv_namespaces]]
+binding = "CACHE"
+id = "6be904ed61714310b45e04f7c181f1ba"
+
+[env.production]
+name = "tenant-site"
+routes = [
+  { pattern = "sites.framevideos.com/*", zone_name = "framevideos.com" },
+  { pattern = "*.framevideos.com/*", zone_name = "framevideos.com" },
+]
+[env.production.vars]
+ENVIRONMENT = "production"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "frame-videos-db"
+database_id = "dae9bd51-c863-42b0-b5b6-21f4569aa6c9"
+
+[[env.production.kv_namespaces]]
+binding = "CACHE"
+id = "6be904ed61714310b45e04f7c181f1ba"

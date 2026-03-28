@@ -4,19 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "echo 'TODO: astro dev'",
-    "build": "echo 'TODO: astro build'",
+    "dev": "wrangler dev",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@frame-videos/shared": "workspace:*",
-    "@frame-videos/ui": "workspace:*",
-    "@frame-videos/seo": "workspace:*",
-    "@frame-videos/i18n": "workspace:*"
+    "@frame-videos/shared": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.7.2"
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.99.0"
   }
 }
