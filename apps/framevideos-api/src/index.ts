@@ -8,6 +8,7 @@ import { requestIdMiddleware } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { structuredLogger } from './middleware/logger.js';
 import { errorTracker } from './middleware/error-tracker.js';
+import { securityHeaders } from './middleware/security-headers.js';
 import { health } from './routes/health.js';
 import { auth } from './routes/auth.js';
 import { billing } from './routes/billing.js';
@@ -43,6 +44,9 @@ app.use(
     credentials: true,
   }),
 );
+
+// Security headers em toda response
+app.use('*', securityHeaders());
 
 // Request ID em toda request
 app.use('*', requestIdMiddleware);

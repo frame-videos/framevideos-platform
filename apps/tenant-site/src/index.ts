@@ -17,6 +17,7 @@ import { renderStaticPage } from './renderers/pages.js';
 import { renderSearchPage } from './renderers/search.js';
 import { render404Page } from './renderers/error.js';
 import { handleAdminRequest } from './renderers/admin.js';
+import { addSecurityHeaders } from './helpers/security.js';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -220,29 +221,26 @@ export default {
       }
 
       if (!html) {
-        return new Response(render404Page(settings, tenant), {
+        return addSecurityHeaders(new Response(render404Page(settings, tenant), {
           status: 404,
           headers: {
             'Content-Type': 'text/html;charset=UTF-8',
             'Cache-Control': 'public, max-age=60',
             'X-Tenant-Id': tenant.tenantId,
           },
-        });
+        }));
       }
 
-      return new Response(html, {
+      return addSecurityHeaders(new Response(html, {
         status: 200,
         headers: {
           'Content-Type': 'text/html;charset=UTF-8',
           'Cache-Control': 'public, max-age=60, s-maxage=300',
           'X-Tenant-Id': tenant.tenantId,
-          'X-Frame-Options': 'SAMEORIGIN',
-          'X-Content-Type-Options': 'nosniff',
-          'Referrer-Policy': 'strict-origin-when-cross-origin',
           'Content-Language': locale,
           'Vary': 'Accept-Language',
         },
-      });
+      }));
     } catch (err) {
       console.error('[tenant-site] Error:', err);
       return new Response(render404Page(null, null), {
