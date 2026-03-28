@@ -10,6 +10,9 @@ const navItems = [
   { to: '/admin/performers', label: 'Modelos', icon: '👤' },
   { to: '/admin/channels', label: 'Canais', icon: '📺' },
   { to: '/admin/pages', label: 'Páginas', icon: '📄' },
+  { to: '/admin/ads', label: 'Anúncios', icon: '📢' },
+  { to: '/admin/ads/placements', label: 'Placements', icon: '📍', indent: true },
+  { to: '/admin/ads/reports', label: 'Relatórios Ads', icon: '📊', indent: true },
   { to: '/admin/analytics', label: 'Analytics', icon: '📈' },
   { to: '/admin/crawler', label: 'Crawler', icon: '🕷️' },
   { to: '/admin/monitoring', label: 'Monitoramento', icon: '🔍' },
@@ -54,10 +57,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               <NavLink
                 key={item.to}
                 to={item.to}
-                end={item.end}
+                end={'end' in item ? item.end : undefined}
                 onClick={() => setSidebarOpen(false)}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    'indent' in item && item.indent ? 'pl-9 ' : ''
+                  }${
                     isActive
                       ? 'bg-purple-600/20 text-purple-400'
                       : 'text-gray-400 hover:text-white hover:bg-gray-800'

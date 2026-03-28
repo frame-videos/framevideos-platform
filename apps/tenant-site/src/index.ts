@@ -17,8 +17,11 @@ import { renderStaticPage } from './renderers/pages.js';
 import { renderSearchPage } from './renderers/search.js';
 import { renderLoginPage, renderSignupPage, renderForgotPasswordPage, renderResetPasswordPage } from './renderers/auth.js';
 import { render404Page } from './renderers/error.js';
+import { renderAdvertiserLogin, renderAdvertiserDashboard, renderAdvertiserCampaigns, renderAdvertiserReports } from './renderers/advertiser.js';
 import { handleAdminRequest } from './renderers/admin.js';
 import { addSecurityHeaders } from './helpers/security.js';
+import { getActivePlacements } from './helpers/ads.js';
+import type { AdSlotConfig } from './templates/layout.js';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -160,6 +163,27 @@ export default {
       // Load settings
       const settings = await getSiteSettings(env.DB, tenant.tenantId, tenant.tenantName);
 
+      // Load active ad placements
+      let adSlots: AdSlotConfig | undefined;
+      try {
+        const placements = await getActivePlacements(env.DB, tenant.tenantId);
+        const apiBaseUrl = env.ENVIRONMENT === 'production'
+          ? 'https://api.framevideos.com'
+          : 'https://api-staging.framevideos.com';
+
+        if (placements.header || placements.sidebar || placements.inContent) {
+          adSlots = {
+            tenantId: tenant.tenantId,
+            apiBaseUrl,
+            headerPlacementId: placements.header?.id,
+            sidebarPlacementId: placements.sidebar?.id,
+            inContentPlacementId: placements.inContent?.id,
+          };
+        }
+      } catch {
+        // Never break on ad loading errors
+      }
+
       // Route matching (handles locale prefix)
       const route = matchRoute(pathname);
 
@@ -218,6 +242,18 @@ export default {
           break;
         case 'page':
           html = await renderStaticPage(env.DB, tenant, settings, locale, route.params['slug']!, localeConfig);
+          break;
+        case 'advertiser-login':
+          html = renderAdvertiserLogin(settings, tenant);
+          break;
+        case 'advertiser-dashboard':
+          html = renderAdvertiserDashboard(settings, tenant);
+          break;
+        case 'advertiser-campaigns':
+          html = renderAdvertiserCampaigns(settings, tenant);
+          break;
+        case 'advertiser-reports':
+          html = renderAdvertiserReports(settings, tenant);
           break;
         case 'auth-login':
           html = renderLoginPage(settings, tenant);

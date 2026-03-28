@@ -16,6 +16,11 @@ import { SettingsPage } from '@/pages/Settings';
 import { AnalyticsPage } from '@/pages/Analytics';
 import { MonitoringPage } from '@/pages/Monitoring';
 import { CrawlerPage } from '@/pages/Crawler';
+import { AdsPage } from '@/pages/Ads';
+import { AdCampaignFormPage } from '@/pages/AdCampaignForm';
+import { AdCreativesPage } from '@/pages/AdCreatives';
+import { AdPlacementsPage } from '@/pages/AdPlacements';
+import { AdReportsPage } from '@/pages/AdReports';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore();
@@ -64,6 +69,12 @@ export function App() {
                   <Route path="analytics" element={<AnalyticsPage />} />
                   <Route path="monitoring" element={<MonitoringPage />} />
                   <Route path="crawler" element={<CrawlerPage />} />
+                  <Route path="ads" element={<AdsPage />} />
+                  <Route path="ads/campaigns/new" element={<AdCampaignFormPage />} />
+                  <Route path="ads/campaigns/:id/edit" element={<AdCampaignFormPage />} />
+                  <Route path="ads/campaigns/:id/creatives" element={<AdCreativesPage />} />
+                  <Route path="ads/placements" element={<AdPlacementsPage />} />
+                  <Route path="ads/reports" element={<AdReportsPage />} />
                   <Route path="*" element={<Navigate to="/admin" replace />} />
                 </Routes>
               </AdminLayout>

@@ -28,6 +28,12 @@ export function matchRoute(pathname: string): RouteMatch {
   if (path === '/forgot-password') return { handler: 'auth-forgot', params: {}, locale: detectedLocale };
   if (path === '/reset-password') return { handler: 'auth-reset', params: {}, locale: detectedLocale };
 
+  // Advertiser portal routes
+  if (path === '/advertiser/login') return { handler: 'advertiser-login', params: {}, locale: detectedLocale };
+  if (path === '/advertiser/dashboard') return { handler: 'advertiser-dashboard', params: {}, locale: detectedLocale };
+  if (path === '/advertiser/campaigns') return { handler: 'advertiser-campaigns', params: {}, locale: detectedLocale };
+  if (path === '/advertiser/reports') return { handler: 'advertiser-reports', params: {}, locale: detectedLocale };
+
   // Parameterized routes
   const videoMatch = path.match(/^\/video\/([^/]+)$/);
   if (videoMatch) return { handler: 'video', params: { slug: videoMatch[1]! }, locale: detectedLocale };

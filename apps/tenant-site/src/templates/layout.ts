@@ -4,6 +4,14 @@ import type { SiteSettings, TenantInfo, LocaleConfig } from '../types.js';
 import { LOCALE_LABELS } from '../constants.js';
 import { esc } from '../helpers/html.js';
 
+export interface AdSlotConfig {
+  headerPlacementId?: string;
+  sidebarPlacementId?: string;
+  inContentPlacementId?: string;
+  tenantId: string;
+  apiBaseUrl: string;
+}
+
 export interface LayoutOptions {
   title: string;
   description?: string;
@@ -20,6 +28,7 @@ export interface LayoutOptions {
   currentPath?: string;
   hreflangPaths?: Record<string, string>;
   tenant?: TenantInfo | null;
+  adSlots?: AdSlotConfig;
 }
 
 export function layout(settings: SiteSettings, opts: LayoutOptions): string {
@@ -179,6 +188,17 @@ export function layout(settings: SiteSettings, opts: LayoutOptions): string {
       </div>
     </div>
   </header>
+
+  ${opts.adSlots?.headerPlacementId ? `
+  <!-- Ad: Header Banner -->
+  <div class="max-w-7xl mx-auto px-4 pt-4" id="ad-slot-header">
+    <div class="flex justify-center">
+      <iframe src="${esc(opts.adSlots.apiBaseUrl)}/api/v1/ads/serve?placement=${esc(opts.adSlots.headerPlacementId)}&tenant=${esc(opts.adSlots.tenantId)}"
+        width="728" height="90" frameborder="0" scrolling="no" loading="lazy"
+        sandbox="allow-popups allow-popups-to-escape-sandbox"
+        style="max-width:100%;border:none;overflow:hidden;"></iframe>
+    </div>
+  </div>` : ''}
 
   <main class="flex-1 max-w-7xl mx-auto px-4 py-6 w-full">
     ${opts.content}

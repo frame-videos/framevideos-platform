@@ -25,6 +25,7 @@ import { monitoring } from './routes/monitoring.js';
 import { admin } from './routes/admin.js';
 import { security } from './routes/security.js';
 import { crawler } from './routes/crawler.js';
+import { ads } from './routes/ads.js';
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,7 @@ app.route('/api/v1/monitoring', monitoring);
 app.route('/api/v1/admin', admin);
 app.route('/api/v1/security', security);
 app.route('/api/v1/crawler', crawler);
+app.route('/api/v1/ads', ads);
 
 // 404 catch-all
 app.notFound((c) => {
