@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { API_URL } from '@/lib/constants';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -43,7 +44,7 @@ export function Revenue() {
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        const res = await fetch('/api/v1/admin/revenue', { headers });
+        const res = await fetch(`${API_URL}/api/v1/admin/revenue`, { headers });
         const json = await res.json();
         setData(json?.data ?? null);
       } catch (err) {

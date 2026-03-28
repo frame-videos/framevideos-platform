@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { API_URL } from '@/lib/constants';
 
 interface CreditPackage {
   id: string;
@@ -138,13 +139,13 @@ export function AdminCredits() {
     try {
       const headers = getHeaders();
       const [pkgRes, cfgRes, revRes] = await Promise.all([
-        fetch('/api/v1/admin/llm-packages', { headers }).then(r => r.json()).catch(() => ({ data: [] })),
-        fetch('/api/v1/admin/llm-config', { headers }).then(r => r.json()).catch(() => ({
+        fetch(`${API_URL}/api/v1/admin/llm-packages`, { headers }).then(r => r.json()).catch(() => ({ data: [] })),
+        fetch(`${API_URL}/api/v1/admin/llm-config`, { headers }).then(r => r.json()).catch(() => ({
           data: { id: null, markup_percent: 150, provider: 'openai', model: 'gpt-4o-mini',
             api_key_masked: '', has_api_key: false, base_url: '', provider_name: '',
             max_tokens: 2048, temperature: 0.7, is_active: 0 }
         })),
-        fetch('/api/v1/admin/revenue', { headers }).then(r => r.json()).catch(() => ({ data: null })),
+        fetch(`${API_URL}/api/v1/admin/revenue`, { headers }).then(r => r.json()).catch(() => ({ data: null })),
       ]);
       setPackages(pkgRes?.data ?? []);
       setConfig(cfgRes?.data ?? config);
@@ -171,7 +172,7 @@ export function AdminCredits() {
     if (!editingPkg) return;
     setSaving(true);
     try {
-      await fetch(`/api/v1/admin/llm-packages/${editingPkg.id}`, {
+      await fetch(`${API_URL}/api/v1/admin/llm-packages/${editingPkg.id}`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify({
@@ -222,7 +223,7 @@ export function AdminCredits() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch('/api/v1/admin/llm-config/test', {
+      const res = await fetch(`${API_URL}/api/v1/admin/llm-config/test`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({
@@ -245,7 +246,7 @@ export function AdminCredits() {
     e.preventDefault();
     setSaving(true);
     try {
-      await fetch('/api/v1/admin/llm-config', {
+      await fetch(`${API_URL}/api/v1/admin/llm-config`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify({

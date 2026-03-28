@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { API_URL } from '@/lib/constants';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { Card } from '@/components/ui/Card';
 
@@ -31,8 +32,8 @@ export function AdminHome() {
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const [tenantsRes, statsRes] = await Promise.all([
-          fetch('/api/v1/admin/tenants?limit=10', { headers }).then(r => r.json()).catch(() => ({ data: [], pagination: { total: 0 } })),
-          fetch('/api/v1/admin/stats', { headers }).then(r => r.json()).catch(() => ({ data: { totalTenants: 0, totalUsers: 0, totalVideos: 0, mrrCents: 0 } })),
+          fetch(`${API_URL}/api/v1/admin/tenants?limit=10`, { headers }).then(r => r.json()).catch(() => ({ data: [], pagination: { total: 0 } })),
+          fetch(`${API_URL}/api/v1/admin/stats`, { headers }).then(r => r.json()).catch(() => ({ data: { totalTenants: 0, totalUsers: 0, totalVideos: 0, mrrCents: 0 } })),
         ]);
 
         const tenantList = tenantsRes?.data ?? [];

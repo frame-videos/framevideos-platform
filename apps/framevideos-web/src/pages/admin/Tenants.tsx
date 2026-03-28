@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { API_URL } from '@/lib/constants';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
@@ -31,7 +32,7 @@ export function Tenants() {
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        const res = await fetch('/api/v1/admin/tenants?limit=50', { headers });
+        const res = await fetch(`${API_URL}/api/v1/admin/tenants?limit=50`, { headers });
         const data = await res.json();
         setTenants(data?.data ?? []);
       } catch (err) {

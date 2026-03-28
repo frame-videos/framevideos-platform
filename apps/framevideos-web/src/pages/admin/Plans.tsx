@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { API_URL } from '@/lib/constants';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -41,7 +42,7 @@ export function Plans() {
 
   const loadPlans = async () => {
     try {
-      const res = await fetch('/api/v1/admin/plans', { headers: getHeaders() });
+      const res = await fetch(`${API_URL}/api/v1/admin/plans`, { headers: getHeaders() });
       const data = await res.json();
       setPlans(data?.data ?? []);
     } catch (err) {
