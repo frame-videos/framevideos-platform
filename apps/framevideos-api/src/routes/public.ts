@@ -6,8 +6,12 @@ import { Hono } from 'hono';
 import type { AppContext } from '../env.js';
 import { D1Client } from '@frame-videos/db';
 import { NotFoundError } from '@frame-videos/shared/errors';
+import { kvCache } from '../middleware/cache.js';
 
 const publicRoutes = new Hono<AppContext>();
+
+// ─── KV cache for all public GET requests (5 min TTL) ───────────────────────
+publicRoutes.use('*', kvCache(300));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
