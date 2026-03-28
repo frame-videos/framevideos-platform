@@ -256,6 +256,76 @@ export default function AdminConfig() {
           </div>
         </div>
       </Card>
+
+      {/* Crawler Schedule Section */}
+      <Card>
+        <div className="p-6 space-y-6">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">⏰</span>
+            <div>
+              <h2 className="text-lg font-semibold">Agendamento do Crawler</h2>
+              <p className="text-sm text-gray-400">
+                O crawler roda automaticamente a cada X minutos para buscar novos vídeos
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-300">
+              Intervalo entre crawls (minutos)
+            </label>
+            <div className="flex items-center gap-3">
+              <Input
+                name="crawler_interval_minutes"
+                id="crawler_interval_minutes"
+                type="number"
+                min={5}
+                max={1440}
+                value={editValues['crawler_interval_minutes'] || '60'}
+                onChange={(e) => setEditValues((prev) => ({ ...prev, crawler_interval_minutes: e.target.value }))}
+                className="w-32"
+              />
+              <span className="text-sm text-gray-400">
+                {(() => {
+                  const mins = parseInt(editValues['crawler_interval_minutes'] || '60', 10);
+                  if (mins < 60) return `(a cada ${mins} minutos)`;
+                  if (mins === 60) return '(a cada 1 hora)';
+                  if (mins < 1440) return `(a cada ${(mins / 60).toFixed(1)} horas)`;
+                  return '(1x por dia)';
+                })()}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">
+              Mínimo: 5 minutos. O Worker verifica a cada 5 min se algum source precisa de crawl.
+              Vídeos duplicados são ignorados automaticamente.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: '15 min', value: '15' },
+              { label: '30 min', value: '30' },
+              { label: '1 hora', value: '60' },
+              { label: '3 horas', value: '180' },
+              { label: '6 horas', value: '360' },
+              { label: '12 horas', value: '720' },
+            ].map((preset) => (
+              <button
+                key={preset.value}
+                type="button"
+                onClick={() => setEditValues((prev) => ({ ...prev, crawler_interval_minutes: preset.value }))}
+                className={`p-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                  editValues['crawler_interval_minutes'] === preset.value
+                    ? 'bg-purple-600/30 text-purple-400 border border-purple-500/50'
+                    : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50 border border-transparent'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

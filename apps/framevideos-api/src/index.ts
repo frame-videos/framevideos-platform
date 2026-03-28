@@ -104,6 +104,57 @@ app.notFound((c) => {
   );
 });
 
+// ─── Scheduled Handler (Cron) ────────────────────────────────────────────────
+
+import { D1Client } from '@frame-videos/db';
+import { executeCrawl } from './services/crawler.js';
+
+async function handleScheduled(env: AppContext['Bindings']): Promise<void> {
+  const db = new D1Client(env.DB);
+
+  // Check global crawl interval from platform_config
+  const intervalConfig = await db.queryOne<{ value: string }>(
+    "SELECT value FROM platform_config WHERE key = 'crawler_interval_minutes'",
+    [],
+  ).catch(() => null);
+  const globalInterval = Math.max(5, parseInt(intervalConfig?.value || '60', 10));
+
+  // Find all active sources that need crawling
+  const sources = await db.query<{
+    id: string;
+    tenant_id: string;
+    name: string;
+    last_run_at: string | null;
+    crawl_interval_minutes: number | null;
+  }>(
+    'SELECT id, tenant_id, name, last_run_at, crawl_interval_minutes FROM crawler_sources WHERE is_active = 1',
+    [],
+  );
+
+  const now = Date.now();
+
+  for (const source of sources) {
+    const interval = source.crawl_interval_minutes || globalInterval;
+    const lastRun = source.last_run_at ? new Date(source.last_run_at + 'Z').getTime() : 0;
+    const elapsed = (now - lastRun) / 60_000; // minutes
+
+    if (elapsed >= interval) {
+      console.log(`[cron] Crawling "${source.name}" (${source.id}) — last run ${Math.round(elapsed)}min ago, interval ${interval}min`);
+      try {
+        const result = await executeCrawl(source.id, source.tenant_id, env);
+        console.log(`[cron] Crawl complete: ${result.videosFound} found, ${result.videosNew} new, ${result.errors.length} errors`);
+      } catch (err) {
+        console.error(`[cron] Crawl failed for ${source.id}:`, err instanceof Error ? err.message : err);
+      }
+    }
+  }
+}
+
 // ─── Export ──────────────────────────────────────────────────────────────────
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(event: ScheduledEvent, env: AppContext['Bindings'], ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(handleScheduled(env));
+  },
+};
