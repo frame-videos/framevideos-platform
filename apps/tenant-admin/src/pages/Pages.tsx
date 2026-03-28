@@ -6,7 +6,8 @@ interface Page {
   id: string;
   title: string;
   slug: string;
-  status: string;
+  status?: string;
+  isPublished?: boolean;
   updatedAt: string;
   createdAt: string;
 }
@@ -27,11 +28,15 @@ export function PagesPage() {
   const loadPages = useCallback(async (page = 1) => {
     setLoading(true);
     try {
-      const data = await api<{ data: Page[]; pagination: Pagination }>(
+      const data = await api<{ data: Page[]; pagination?: Pagination }>(
         `/api/v1/content/pages?page=${page}&limit=24`,
       );
-      setPages(data.data);
-      setPagination(data.pagination);
+      setPages(data.data ?? []);
+      if (data.pagination) {
+        setPagination(data.pagination);
+      } else {
+        setPagination({ page: 1, limit: 24, total: (data.data ?? []).length, totalPages: 1 });
+      }
     } catch (err) {
       console.error('Failed to load pages:', err);
     } finally {
@@ -128,12 +133,12 @@ export function PagesPage() {
                     <td className="px-4 py-3 hidden sm:table-cell">
                       <span
                         className={`inline-flex px-2 py-0.5 text-xs rounded-full border ${
-                          page.status === 'published'
+                          (page.status === 'published' || page.isPublished)
                             ? 'bg-green-900/30 text-green-400 border-green-800/50'
                             : 'bg-yellow-900/30 text-yellow-400 border-yellow-800/50'
                         }`}
                       >
-                        {page.status === 'published' ? 'Publicada' : 'Rascunho'}
+                        {(page.status === 'published' || page.isPublished) ? 'Publicada' : 'Rascunho'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-400 hidden md:table-cell">
