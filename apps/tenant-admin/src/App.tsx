@@ -15,6 +15,7 @@ import { PageFormPage } from '@/pages/PageForm';
 import { SettingsPage } from '@/pages/Settings';
 import { AnalyticsPage } from '@/pages/Analytics';
 import { MonitoringPage } from '@/pages/Monitoring';
+import { CrawlerPage } from '@/pages/Crawler';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore();
@@ -62,6 +63,7 @@ export function App() {
                   <Route path="settings" element={<SettingsPage />} />
                   <Route path="analytics" element={<AnalyticsPage />} />
                   <Route path="monitoring" element={<MonitoringPage />} />
+                  <Route path="crawler" element={<CrawlerPage />} />
                   <Route path="*" element={<Navigate to="/admin" replace />} />
                 </Routes>
               </AdminLayout>

@@ -11,6 +11,7 @@ const navItems = [
   { to: '/admin/channels', label: 'Canais', icon: '📺' },
   { to: '/admin/pages', label: 'Páginas', icon: '📄' },
   { to: '/admin/analytics', label: 'Analytics', icon: '📈' },
+  { to: '/admin/crawler', label: 'Crawler', icon: '🕷️' },
   { to: '/admin/monitoring', label: 'Monitoramento', icon: '🔍' },
   { to: '/admin/settings', label: 'Configurações', icon: '⚙️' },
 ];
