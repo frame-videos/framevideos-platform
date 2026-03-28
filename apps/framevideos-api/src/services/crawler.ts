@@ -121,8 +121,15 @@ function extractText(html: string): string {
  * Extract src from img tags.
  */
 function extractImgSrc(html: string): string | null {
-  const match = html.match(/<img[^>]*src="([^"]+)"[^>]*>/i);
-  return match ? match[1]! : null;
+  // Prefer data-src (lazy-loaded images) over src (often a placeholder)
+  const dataSrcMatch = html.match(/<img[^>]*data-src="([^"]+)"[^>]*>/i);
+  if (dataSrcMatch) return dataSrcMatch[1]!;
+  // Fallback to regular src
+  const srcMatch = html.match(/<img[^>]*src="([^"]+)"[^>]*>/i);
+  if (srcMatch && !srcMatch[1]!.includes('blank.gif') && !srcMatch[1]!.includes('placeholder')) {
+    return srcMatch[1]!;
+  }
+  return null;
 }
 
 /**
@@ -147,32 +154,55 @@ export function parseVideoLinks(html: string, selectors: CrawlSelectors, baseUrl
 
   console.log(`[crawler] parseVideoLinks: html=${html.length} bytes, baseUrl=${baseUrl}, selectors=${JSON.stringify(selectors)}`);
 
-  // Strategy 1: Try to find video cards/items using the link selector
-  const linkPattern = selectorToPattern(selectors.videoLink);
-  const linkMatches = html.matchAll(linkPattern);
-  let matchCount = 0;
+  // Strategy 1: Split HTML into blocks using the container selector
+  // For nested elements (like div.thumb-block containing sub-divs),
+  // regex-based matching fails. Instead, split by the opening tag.
+  const linkSelector = selectors.videoLink.trim();
+  const classMatch = linkSelector.match(/^(\w+)\.([a-zA-Z0-9_-]+)$/);
 
-  for (const match of linkMatches) {
-    matchCount++;
-    const block = match[0];
+  let blocks: string[] = [];
+
+  if (classMatch) {
+    const [, tag, className] = classMatch;
+    // Split by opening tags of this class, then each segment is one block
+    const splitter = new RegExp(`<${tag}[^>]*class="[^"]*${escapeRegex(className!)}[^"]*"[^>]*>`, 'gi');
+    const parts = html.split(splitter);
+    // Skip the first part (before the first match)
+    blocks = parts.slice(1);
+    console.log(`[crawler] Split into ${blocks.length} blocks by ${linkSelector}`);
+  } else {
+    // Fallback: use regex matching (works for simple selectors)
+    const linkPattern = selectorToPattern(linkSelector);
+    for (const match of html.matchAll(linkPattern)) {
+      blocks.push(match[0]);
+    }
+  }
+
+  for (const block of blocks) {
+    // Extract all hrefs from this block
     const hrefs = extractHrefs(block);
-    if (hrefs.length === 0) continue;
+    const videoHref = hrefs.find((h) => /\/video[./]/.test(h));
+    if (!videoHref) continue;
 
-    const url = resolveUrl(hrefs[0]!, baseUrl);
+    const url = resolveUrl(videoHref, baseUrl);
     if (seen.has(url)) continue;
     seen.add(url);
 
-    // Extract title from block
-    const titlePattern = selectorToPattern(selectors.title);
-    const titleMatch = block.match(titlePattern);
-    const title = titleMatch ? extractText(titleMatch[0]) : '';
+    // Extract title: prefer title attribute on links, then text content
+    let title = '';
+    const titleAttrMatch = block.match(/<a[^>]*title="([^"]+)"[^>]*>/i);
+    if (titleAttrMatch) {
+      title = titleAttrMatch[1]!;
+    } else {
+      const titlePattern = selectorToPattern(selectors.title);
+      const titleMatch = block.match(titlePattern);
+      title = titleMatch ? extractText(titleMatch[0]) : '';
+    }
 
-    // Extract thumbnail from block
-    const thumbPattern = selectorToPattern(selectors.thumbnail);
-    const thumbMatch = block.match(thumbPattern);
-    const thumbnailUrl = thumbMatch ? (extractImgSrc(thumbMatch[0]) ?? '') : '';
+    // Extract thumbnail (prefer data-src for lazy-loaded images)
+    const thumbnailUrl = extractImgSrc(block) ?? '';
 
-    // Extract duration if selector provided
+    // Extract duration
     let duration: string | undefined;
     if (selectors.duration) {
       const durationPattern = selectorToPattern(selectors.duration);
@@ -190,7 +220,7 @@ export function parseVideoLinks(html: string, selectors: CrawlSelectors, baseUrl
     }
   }
 
-  console.log(`[crawler] Strategy 1: ${matchCount} blocks matched, ${videos.length} videos extracted`);
+  console.log(`[crawler] Strategy 1: ${blocks.length} blocks, ${videos.length} videos extracted`);
 
   // Strategy 2: Fallback — extract all links with href containing video-like patterns
   if (videos.length === 0) {
@@ -526,14 +556,23 @@ export async function executeCrawl(
         const title = enriched?.title || video.title || `Video ${videoId.slice(0, 8)}`;
         const description = enriched?.description || '';
         const rawSlug = slugify(title);
-        const slug = rawSlug || `video-${videoId.slice(0, 8).toLowerCase()}`;
+        let slug = rawSlug || `video-${videoId.slice(0, 8).toLowerCase()}`;
+
+        // Ensure slug uniqueness within tenant
+        const existingSlug = await db.queryOne<{ id: string }>(
+          'SELECT id FROM videos WHERE tenant_id = ? AND slug = ?',
+          [tenantId, slug],
+        );
+        if (existingSlug) {
+          slug = `${slug}-${videoId.slice(0, 6).toLowerCase()}`;
+        }
         const durationSeconds = parseDuration(video.duration);
 
         await db.batch([
           {
             sql: `INSERT INTO videos (id, tenant_id, slug, status, thumbnail_url, source_url, duration_seconds)
-                  VALUES (?, ?, ?, 'draft', ?, ?, ?)`,
-            params: [videoId, tenantId, slug, video.thumbnailUrl || null, video.base_url, durationSeconds],
+                  VALUES (?, ?, ?, 'published', ?, ?, ?)`,
+            params: [videoId, tenantId, slug, video.thumbnailUrl || null, video.url, durationSeconds],
           },
           {
             sql: `INSERT INTO video_translations (id, video_id, locale, title, description)
