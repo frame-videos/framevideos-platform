@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'apps/tenant-site/**'
+  workflow_dispatch:
 
 concurrency:
   group: deploy-tenant-site
