@@ -10,7 +10,6 @@
 import type { Env, TenantBundle } from './types.js';
 import { resolveTenantBundle, detectLocaleFromHeader, checkRedirect } from './db/tenant.js';
 import { matchRoute } from './router.js';
-import { esc } from './helpers/html.js';
 import { generateSitemapIndex, generateVideoSitemap, generateCategorySitemap, generatePageSitemap } from './sitemap/generators.js';
 import { renderHomepage } from './renderers/home.js';
 import { renderVideosPage, renderVideoPage } from './renderers/videos.js';
@@ -88,6 +87,68 @@ function isCacheablePage(pathname: string, method: string): boolean {
   if (pathname.startsWith('/api/')) return false;
   if (pathname === '/__health') return false;
   return true;
+}
+
+// ─── Helper: renderiza a página baseado na rota (encapsula o switch) ────────
+
+async function renderPage(
+  route: import('./types.js').RouteMatch,
+  db: D1Database,
+  tenant: import('./types.js').TenantInfo,
+  settings: import('./types.js').SiteSettings,
+  locale: string,
+  url: URL,
+  localeConfig: import('./types.js').LocaleConfig,
+  env: Env,
+): Promise<string | null> {
+  switch (route.handler) {
+    case 'home':
+      return renderHomepage(db, tenant, settings, locale, localeConfig);
+    case 'videos':
+      return renderVideosPage(db, tenant, settings, locale, url, localeConfig);
+    case 'search':
+      return renderSearchPage(db, tenant, settings, locale, url, localeConfig);
+    case 'video':
+      return renderVideoPage(db, tenant, settings, locale, route.params['slug']!, localeConfig);
+    case 'categories':
+      return renderCategoriesPage(db, tenant, settings, locale, localeConfig);
+    case 'category':
+      return renderCategoryPage(db, tenant, settings, locale, route.params['slug']!, url, localeConfig);
+    case 'performers':
+      return renderPerformersPage(db, tenant, settings, locale, localeConfig);
+    case 'performer':
+      return renderPerformerPage(db, tenant, settings, locale, route.params['slug']!, url, localeConfig);
+    case 'tags':
+      return renderTagsPage(db, tenant, settings, locale, localeConfig);
+    case 'tag':
+      return renderTagPage(db, tenant, settings, locale, route.params['slug']!, url, localeConfig);
+    case 'channels':
+      return renderChannelsPage(db, tenant, settings, locale, localeConfig);
+    case 'channel':
+      return renderChannelPage(db, tenant, settings, locale, route.params['slug']!, url, localeConfig);
+    case 'page':
+      return renderStaticPage(db, tenant, settings, locale, route.params['slug']!, localeConfig);
+    case 'advertiser-login':
+      return renderAdvertiserLogin(settings, tenant);
+    case 'advertiser-dashboard':
+      return renderAdvertiserDashboard(settings, tenant);
+    case 'advertiser-campaigns':
+      return renderAdvertiserCampaigns(settings, tenant);
+    case 'advertiser-reports':
+      return renderAdvertiserReports(settings, tenant);
+    case 'auth-login':
+      return renderLoginPage(settings, tenant);
+    case 'auth-signup':
+      return renderSignupPage(settings, tenant);
+    case 'auth-forgot':
+      return renderForgotPasswordPage(settings, tenant);
+    case 'auth-reset': {
+      const resetToken = url.searchParams.get('token') ?? '';
+      return renderResetPasswordPage(settings, tenant, resetToken);
+    }
+    default:
+      return null;
+  }
 }
 
 // ─── Main fetch handler ─────────────────────────────────────────────────────
@@ -217,17 +278,7 @@ export default {
         });
       }
 
-      // ── Check redirects (1 D1 query, only for non-cached requests) ──
-      timing.mark('redirect');
-      const redirect = await checkRedirect(env.DB, tenant.tenantId, pathname);
-      timing.measure('redirect', 'Redirect check');
-
-      if (redirect) {
-        return new Response(null, {
-          status: redirect.statusCode,
-          headers: { 'Location': redirect.toPath },
-        });
-      }
+      // ── Fast-paths que não precisam de D1 ──
 
       // Robots.txt
       if (pathname === '/robots.txt') {
@@ -275,15 +326,47 @@ export default {
 
       // ══════════════════════════════════════════════════════════════════
       // LAYER 3: Render page (D1 queries via db.batch())
-      // At this point we have tenant + locale + settings from KV bundle.
-      // Only content queries remain (batched).
+      // Redirect check + ads + render rodam em PARALELO pra reduzir
+      // latência no path de cache MISS.
       // ══════════════════════════════════════════════════════════════════
 
-      // Load ad placements (1 D1 query — can run in parallel with render)
-      timing.mark('ads');
-      const adPlacements = await getActivePlacements(env.DB, tenant.tenantId).catch(() => ({ header: null, sidebar: null, inContent: null }));
-      timing.measure('ads', 'Ad placements');
+      // Determinar locale ANTES do Promise.all (não precisa de D1)
+      let locale = localeConfig.defaultLocale;
+      if (route.locale && localeConfig.enabledLocales.includes(route.locale)) {
+        locale = route.locale;
+      } else if (!route.locale && route.handler === 'home') {
+        const detected = detectLocaleFromHeader(request.headers.get('Accept-Language'), localeConfig);
+        if (detected && detected !== localeConfig.defaultLocale && localeConfig.enabledLocales.length > 1) {
+          return new Response(null, {
+            status: 302,
+            headers: { 'Location': `/${detected}/`, 'Vary': 'Accept-Language' },
+          });
+        }
+      }
 
+      // Redirects só são necessários pra URLs não reconhecidas (404) ou páginas estáticas
+      const needsRedirectCheck = route.handler === '404' || route.handler === 'page';
+
+      // ── Paralelizar redirect check + ads + render ──
+      timing.mark('parallel');
+      const [redirect, adPlacements, html] = await Promise.all([
+        needsRedirectCheck
+          ? checkRedirect(env.DB, tenant.tenantId, pathname)
+          : Promise.resolve(null),
+        getActivePlacements(env.DB, tenant.tenantId).catch(() => ({ header: null, sidebar: null, inContent: null })),
+        renderPage(route, env.DB, tenant, settings, locale, url, localeConfig, env),
+      ]);
+      timing.measure('parallel', 'Parallel fetch');
+
+      // Se checkRedirect retornou redirect, retornar imediatamente (ignora render)
+      if (redirect) {
+        return new Response(null, {
+          status: redirect.statusCode,
+          headers: { 'Location': redirect.toPath },
+        });
+      }
+
+      // Montar adSlots APÓS o Promise.all
       let adSlots: AdSlotConfig | undefined;
       const apiBaseUrl = env.ENVIRONMENT === 'production'
         ? 'https://api.framevideos.com'
@@ -298,93 +381,6 @@ export default {
           inContentPlacementId: adPlacements.inContent?.id,
         };
       }
-
-      // Determine locale: route locale > Accept-Language > default
-      let locale = localeConfig.defaultLocale;
-      if (route.locale && localeConfig.enabledLocales.includes(route.locale)) {
-        locale = route.locale;
-      } else if (!route.locale && route.handler === 'home') {
-        const detected = detectLocaleFromHeader(request.headers.get('Accept-Language'), localeConfig);
-        if (detected && detected !== localeConfig.defaultLocale && localeConfig.enabledLocales.length > 1) {
-          return new Response(null, {
-            status: 302,
-            headers: { 'Location': `/${detected}/`, 'Vary': 'Accept-Language' },
-          });
-        }
-      }
-
-      timing.mark('render');
-      let html: string | null = null;
-
-      switch (route.handler) {
-        case 'home':
-          html = await renderHomepage(env.DB, tenant, settings, locale, localeConfig);
-          break;
-        case 'videos':
-          html = await renderVideosPage(env.DB, tenant, settings, locale, url, localeConfig);
-          break;
-        case 'search':
-          html = await renderSearchPage(env.DB, tenant, settings, locale, url, localeConfig);
-          break;
-        case 'video':
-          html = await renderVideoPage(env.DB, tenant, settings, locale, route.params['slug']!, localeConfig);
-          break;
-        case 'categories':
-          html = await renderCategoriesPage(env.DB, tenant, settings, locale, localeConfig);
-          break;
-        case 'category':
-          html = await renderCategoryPage(env.DB, tenant, settings, locale, route.params['slug']!, url, localeConfig);
-          break;
-        case 'performers':
-          html = await renderPerformersPage(env.DB, tenant, settings, locale, localeConfig);
-          break;
-        case 'performer':
-          html = await renderPerformerPage(env.DB, tenant, settings, locale, route.params['slug']!, url, localeConfig);
-          break;
-        case 'tags':
-          html = await renderTagsPage(env.DB, tenant, settings, locale, localeConfig);
-          break;
-        case 'tag':
-          html = await renderTagPage(env.DB, tenant, settings, locale, route.params['slug']!, url, localeConfig);
-          break;
-        case 'channels':
-          html = await renderChannelsPage(env.DB, tenant, settings, locale, localeConfig);
-          break;
-        case 'channel':
-          html = await renderChannelPage(env.DB, tenant, settings, locale, route.params['slug']!, url, localeConfig);
-          break;
-        case 'page':
-          html = await renderStaticPage(env.DB, tenant, settings, locale, route.params['slug']!, localeConfig);
-          break;
-        case 'advertiser-login':
-          html = renderAdvertiserLogin(settings, tenant);
-          break;
-        case 'advertiser-dashboard':
-          html = renderAdvertiserDashboard(settings, tenant);
-          break;
-        case 'advertiser-campaigns':
-          html = renderAdvertiserCampaigns(settings, tenant);
-          break;
-        case 'advertiser-reports':
-          html = renderAdvertiserReports(settings, tenant);
-          break;
-        case 'auth-login':
-          html = renderLoginPage(settings, tenant);
-          break;
-        case 'auth-signup':
-          html = renderSignupPage(settings, tenant);
-          break;
-        case 'auth-forgot':
-          html = renderForgotPasswordPage(settings, tenant);
-          break;
-        case 'auth-reset': {
-          const resetToken = url.searchParams.get('token') ?? '';
-          html = renderResetPasswordPage(settings, tenant, resetToken);
-          break;
-        }
-      }
-
-      timing.measure('render', 'Page render');
 
       if (!html) {
         return addSecurityHeaders(new Response(render404Page(settings, tenant), {

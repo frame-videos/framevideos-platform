@@ -106,8 +106,9 @@ export async function getHomepageDataBatched(
 // ─── Batched Video Page Data (1 D1 round-trip) ───────────────────────────────
 
 /**
- * Loads video detail + related data in a single db.batch() call.
- * Replaces 5 sequential queries with 1 round-trip.
+ * Carrega vídeo + dados relacionados em 1 único db.batch() (1 round-trip D1).
+ * Usa subquery inline pra resolver o video ID, eliminando o round-trip inicial
+ * que buscava o vídeo separado só pra pegar o ID.
  */
 export async function getVideoPageDataBatched(
   db: D1Database,
@@ -115,50 +116,48 @@ export async function getVideoPageDataBatched(
   locale: string,
   slug: string,
 ) {
-  // First, get the video to obtain its ID
-  const video = await db.prepare(
-    `SELECT v.id, v.slug, v.duration_seconds, v.thumbnail_url, v.video_url, v.embed_url,
-            v.view_count, v.like_count, v.published_at, v.created_at,
-            vt.title, vt.description, vt.seo_title, vt.seo_description
-     FROM videos v
-     LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?
-     WHERE v.tenant_id = ? AND v.slug = ? AND v.status = 'published'`
-  ).bind(locale, tenantId, slug).first<{
-    id: string; slug: string; duration_seconds: number | null;
-    thumbnail_url: string | null; video_url: string | null; embed_url: string | null;
-    view_count: number; like_count: number; published_at: string | null; created_at: string;
-    title: string | null; description: string | null;
-    seo_title: string | null; seo_description: string | null;
-  }>();
+  // Subquery inline — resolve o video ID sem round-trip extra
+  const vidSub = `(SELECT id FROM videos WHERE tenant_id = ? AND slug = ? AND status = 'published' LIMIT 1)`;
 
-  if (!video) return null;
-
-  // Batch all related queries in 1 round-trip
-  const [categoriesResult, tagsResult, performersResult, channelsResult, relatedResult] = await db.batch([
+  const [videoResult, categoriesResult, tagsResult, performersResult, channelsResult, relatedResult] = await db.batch([
+    // 1. Vídeo principal (query completa com translations)
+    db.prepare(
+      `SELECT v.id, v.slug, v.duration_seconds, v.thumbnail_url, v.video_url, v.embed_url,
+              v.view_count, v.like_count, v.published_at, v.created_at,
+              vt.title, vt.description, vt.seo_title, vt.seo_description
+       FROM videos v
+       LEFT JOIN video_translations vt ON vt.video_id = v.id AND vt.locale = ?
+       WHERE v.tenant_id = ? AND v.slug = ? AND v.status = 'published'`
+    ).bind(locale, tenantId, slug),
+    // 2. Categorias — usa subquery pro video ID
     db.prepare(
       `SELECT c.slug, ct.name FROM video_categories vc
        JOIN categories c ON c.id = vc.category_id
        LEFT JOIN category_translations ct ON ct.category_id = c.id AND ct.locale = ?
-       WHERE vc.video_id = ?`
-    ).bind(locale, video.id),
+       WHERE vc.video_id = ${vidSub}`
+    ).bind(locale, tenantId, slug),
+    // 3. Tags — usa subquery pro video ID
     db.prepare(
-      `SELECT t.slug, tt.name FROM video_tags vt
-       JOIN tags t ON t.id = vt.tag_id
+      `SELECT t.slug, tt.name FROM video_tags vtg
+       JOIN tags t ON t.id = vtg.tag_id
        LEFT JOIN tag_translations tt ON tt.tag_id = t.id AND tt.locale = ?
-       WHERE vt.video_id = ?`
-    ).bind(locale, video.id),
+       WHERE vtg.video_id = ${vidSub}`
+    ).bind(locale, tenantId, slug),
+    // 4. Performers — usa subquery pro video ID
     db.prepare(
       `SELECT p.slug, pt.name, p.image_url FROM video_performers vp
        JOIN performers p ON p.id = vp.performer_id
        LEFT JOIN performer_translations pt ON pt.performer_id = p.id AND pt.locale = ?
-       WHERE vp.video_id = ?`
-    ).bind(locale, video.id),
+       WHERE vp.video_id = ${vidSub}`
+    ).bind(locale, tenantId, slug),
+    // 5. Channels — usa subquery pro video ID
     db.prepare(
-      `SELECT ch.slug, cht.name, ch.logo_url FROM video_channels vc
-       JOIN channels ch ON ch.id = vc.channel_id
+      `SELECT ch.slug, cht.name, ch.logo_url FROM video_channels vch
+       JOIN channels ch ON ch.id = vch.channel_id
        LEFT JOIN channel_translations cht ON cht.channel_id = ch.id AND cht.locale = ?
-       WHERE vc.video_id = ?`
-    ).bind(locale, video.id),
+       WHERE vch.video_id = ${vidSub}`
+    ).bind(locale, tenantId, slug),
+    // 6. Vídeos relacionados — usa subquery pra excluir o vídeo atual
     db.prepare(
       `SELECT v2.slug, vt2.title, v2.thumbnail_url, v2.duration_seconds, v2.view_count,
               (SELECT cht2.name FROM video_channels vc3
@@ -167,10 +166,20 @@ export async function getVideoPageDataBatched(
                WHERE vc3.video_id = v2.id LIMIT 1) as channel_name
        FROM videos v2
        LEFT JOIN video_translations vt2 ON vt2.video_id = v2.id AND vt2.locale = ?
-       WHERE v2.tenant_id = ? AND v2.status = 'published' AND v2.id != ?
+       WHERE v2.tenant_id = ? AND v2.status = 'published' AND v2.id != ${vidSub}
        ORDER BY v2.created_at DESC LIMIT 12`
-    ).bind(locale, locale, tenantId, video.id),
+    ).bind(locale, locale, tenantId, tenantId, slug),
   ]);
+
+  const video = (videoResult as D1Result<{
+    id: string; slug: string; duration_seconds: number | null;
+    thumbnail_url: string | null; video_url: string | null; embed_url: string | null;
+    view_count: number; like_count: number; published_at: string | null; created_at: string;
+    title: string | null; description: string | null;
+    seo_title: string | null; seo_description: string | null;
+  }>).results[0];
+
+  if (!video) return null;
 
   const categories = (categoriesResult as D1Result<{ slug: string; name: string | null }>).results;
   const tags = (tagsResult as D1Result<{ slug: string; name: string | null }>).results;
