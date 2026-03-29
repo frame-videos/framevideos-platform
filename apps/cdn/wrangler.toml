@@ -1,0 +1,15 @@
+name = "frame-cdn"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "frame-media"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "frame-videos-db"
+database_id = "44b72903-9e99-4f3b-82ee-8bf0cfd0e793"
+
+[vars]
+ALLOWED_ORIGINS = "*"
