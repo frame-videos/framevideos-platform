@@ -69,15 +69,20 @@ export default {
 };
 
 async function serveThumbnail(videoId: string, request: Request, env: Env): Promise<Response> {
-  // Try webp first, then jpg
-  const extensions = ['webp', 'jpg', 'jpeg', 'png'];
+  const acceptWebp = (request.headers.get('accept') || '').includes('image/webp');
+  
+  // Prefer webp if browser supports it, then jpg
+  const extensions = acceptWebp 
+    ? ['webp', 'jpg', 'jpeg', 'png']
+    : ['jpg', 'jpeg', 'png', 'webp'];
   
   for (const ext of extensions) {
     const key = `thumbs/${videoId}.${ext}`;
     const object = await env.MEDIA.get(key);
     
     if (object) {
-      return r2Response(object, request, env);
+      // Vary on Accept so CDN caches webp/jpeg separately
+      return r2Response(object, request, env, { 'vary': 'Accept' });
     }
   }
 
@@ -155,7 +160,7 @@ async function serveR2(key: string, request: Request, env: Env): Promise<Respons
   return r2Response(object, request, env);
 }
 
-function r2Response(object: R2ObjectBody, request: Request, env: Env): Response {
+function r2Response(object: R2ObjectBody, request: Request, env: Env, extraHeaders?: Record<string, string>): Response {
   const contentType = object.httpMetadata?.contentType || 
     guessMime(object.key) || 'application/octet-stream';
 
@@ -165,6 +170,7 @@ function r2Response(object: R2ObjectBody, request: Request, env: Env): Response 
     'etag': object.httpEtag,
     'x-cdn-cache': 'HIT',
     ...corsHeaders(env),
+    ...extraHeaders,
   };
 
   // Handle conditional requests (304)
