@@ -26,6 +26,7 @@ import { handleAdminRequest } from './renderers/admin.js';
 import { addSecurityHeaders } from './helpers/security.js';
 import { getActivePlacements } from './helpers/ads.js';
 import type { AdSlotConfig } from './templates/layout.js';
+import { CSS_CONTENT, CSS_PATH } from './templates/styles.js';
 
 // ─── Timing helper ───────────────────────────────────────────────────────────
 
@@ -173,6 +174,18 @@ export default {
       return new Response(null, { status: 204 });
     }
 
+    // ── CSS estático com cache immutable (evita ~11KB inline em cada página) ──
+    if (pathname.startsWith('/assets/styles-')) {
+      return new Response(CSS_CONTENT, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/css;charset=UTF-8',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
+
     try {
       // ══════════════════════════════════════════════════════════════════
       // LAYER 1: Cloudflare Cache API check (per-datacenter, <1ms)
@@ -224,6 +237,50 @@ export default {
       }
 
       const { tenant, localeConfig, settings } = bundle;
+
+      // ══════════════════════════════════════════════════════════════════
+      // LAYER 1.5: KV page cache (cross-datacenter)
+      // Roda DEPOIS do Cache API miss e DEPOIS do tenant bundle resolution.
+      // Evita render D1 quando a página já está no KV global.
+      // ══════════════════════════════════════════════════════════════════
+
+      if (cacheable) {
+        timing.mark('kv-page');
+        const kvPageKey = `page:${tenant.tenantId}:${routeLocale}:${pathname}`;
+        const kvHtml = await env.CACHE.get(kvPageKey);
+        timing.measure('kv-page', 'KV page cache lookup');
+
+        if (kvHtml) {
+          const kvHeaders: Record<string, string> = {
+            'Content-Type': 'text/html;charset=UTF-8',
+            'Cache-Control': 'public, max-age=60, s-maxage=300',
+            'X-Tenant-Id': tenant.tenantId,
+            'X-Cache': 'KV-HIT',
+            'Content-Language': routeLocale === 'default' ? localeConfig.defaultLocale : routeLocale,
+            'Vary': 'Accept-Language',
+            'Server-Timing': timing.toString(),
+          };
+
+          // Escrever no Cache API pra próxima request no mesmo datacenter ser HIT direto
+          const cache = caches.default;
+          const cacheRequest = buildCacheKey(request, routeLocale);
+          ctx.waitUntil(
+            cache.put(cacheRequest, new Response(kvHtml, {
+              status: 200,
+              headers: {
+                'Content-Type': 'text/html;charset=UTF-8',
+                'Cache-Control': 'public, max-age=60, s-maxage=300',
+                'X-Tenant-Id': tenant.tenantId,
+                'X-Cache': 'HIT',
+                'Content-Language': routeLocale === 'default' ? localeConfig.defaultLocale : routeLocale,
+                'Vary': 'Accept-Language',
+              },
+            }))
+          );
+
+          return addSecurityHeaders(new Response(kvHtml, { status: 200, headers: kvHeaders }));
+        }
+      }
 
       // ── Analytics tracking proxy ────────────────────────────────────
       if (pathname === '/api/track' && request.method === 'POST') {

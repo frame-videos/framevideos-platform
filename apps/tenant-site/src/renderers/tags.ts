@@ -38,13 +38,16 @@ export async function renderTagsPage(db: D1Database, tenant: TenantInfo, setting
 }
 
 export async function renderTagPage(db: D1Database, tenant: TenantInfo, settings: SiteSettings, locale: string, slug: string, url: URL, localeConfig: LocaleConfig): Promise<string | null> {
-  const tag = await getTagBySlug(db, tenant.tenantId, locale, slug);
-  if (!tag) return null;
   const lp = locale !== localeConfig.defaultLocale ? `/${locale}` : '';
-
   const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const offset = (page - 1) * VIDEOS_PER_PAGE;
-  const { videos, total } = await getVideos(db, tenant.tenantId, locale, { limit: VIDEOS_PER_PAGE, offset, tagSlug: slug });
+
+  // Paralelizar: ambas as queries são independentes
+  const [tag, { videos, total }] = await Promise.all([
+    getTagBySlug(db, tenant.tenantId, locale, slug),
+    getVideos(db, tenant.tenantId, locale, { limit: VIDEOS_PER_PAGE, offset, tagSlug: slug }),
+  ]);
+  if (!tag) return null;
   const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
 
   let content = `<div class="mb-6">
