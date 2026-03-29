@@ -1,9 +1,14 @@
 // Tenant Site Worker — Entry point
 // SSR: resolve domains → render tenant site with D1 data
-// Modularized from original 1800+ line monolith
+// Optimized: Cache API first, db.batch(), unified tenant bundle, Server-Timing headers
+//
+// Performance architecture (cache-first, 3-layer):
+// Layer 1: Cloudflare Cache API (per-datacenter, <1ms) — full HTML responses
+// Layer 2: KV bundle cache (tenant + locale + settings) — avoids D1 for tenant resolution
+// Layer 3: D1 batch queries — minimal round-trips when cache miss
 
-import type { Env } from './types.js';
-import { resolveTenant, getSiteSettings, getTenantLocaleConfig, detectLocaleFromHeader, checkRedirect } from './db/tenant.js';
+import type { Env, TenantBundle } from './types.js';
+import { resolveTenantBundle, detectLocaleFromHeader, checkRedirect } from './db/tenant.js';
 import { matchRoute } from './router.js';
 import { esc } from './helpers/html.js';
 import { generateSitemapIndex, generateVideoSitemap, generateCategorySitemap, generatePageSitemap } from './sitemap/generators.js';
@@ -23,36 +28,143 @@ import { addSecurityHeaders } from './helpers/security.js';
 import { getActivePlacements } from './helpers/ads.js';
 import type { AdSlotConfig } from './templates/layout.js';
 
+// ─── Timing helper ───────────────────────────────────────────────────────────
+
+class ServerTiming {
+  private entries: Array<{ name: string; dur: number; desc?: string }> = [];
+  private marks = new Map<string, number>();
+
+  mark(name: string): void {
+    this.marks.set(name, performance.now());
+  }
+
+  measure(name: string, desc?: string): void {
+    const start = this.marks.get(name);
+    if (start !== undefined) {
+      this.entries.push({ name, dur: Math.round((performance.now() - start) * 100) / 100, desc });
+      this.marks.delete(name);
+    }
+  }
+
+  add(name: string, dur: number, desc?: string): void {
+    this.entries.push({ name, dur: Math.round(dur * 100) / 100, desc });
+  }
+
+  toString(): string {
+    return this.entries
+      .map((e) => {
+        let s = e.name;
+        if (e.desc) s += `;desc="${e.desc}"`;
+        s += `;dur=${e.dur}`;
+        return s;
+      })
+      .join(', ');
+  }
+}
+
+// ─── Cache helpers ───────────────────────────────────────────────────────────
+
+/** Build a cache key URL for the Cloudflare Cache API */
+function buildCacheKey(request: Request, locale: string): Request {
+  const url = new URL(request.url);
+  // Include locale in cache key to vary by locale
+  url.searchParams.set('_locale', locale);
+  // Remove any tracking params that shouldn't affect cache
+  url.searchParams.delete('utm_source');
+  url.searchParams.delete('utm_medium');
+  url.searchParams.delete('utm_campaign');
+  url.searchParams.delete('utm_content');
+  url.searchParams.delete('utm_term');
+  url.searchParams.delete('fbclid');
+  url.searchParams.delete('gclid');
+  return new Request(url.toString(), { method: 'GET' });
+}
+
+/** Pages that should be cached via Cache API */
+function isCacheablePage(pathname: string, method: string): boolean {
+  if (method !== 'GET') return false;
+  if (pathname.startsWith('/admin')) return false;
+  if (pathname.startsWith('/advertiser')) return false;
+  if (pathname.startsWith('/api/')) return false;
+  if (pathname === '/__health') return false;
+  return true;
+}
+
+// ─── Main fetch handler ─────────────────────────────────────────────────────
+
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const timing = new ServerTiming();
+    const totalStart = performance.now();
+
     const url = new URL(request.url);
     const hostname = url.hostname.toLowerCase();
     const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
-    // Health check
+    // ── Fast paths (no D1, no cache) ──
     if (pathname === '/__health') {
       return new Response(JSON.stringify({ status: 'ok', worker: 'tenant-site' }), {
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // Favicon fallback
     if (pathname === '/favicon.ico') {
       return new Response(null, { status: 204 });
     }
 
     try {
-      // Resolve tenant
-      const tenant = await resolveTenant(hostname, env.DB, env.CACHE);
+      // ══════════════════════════════════════════════════════════════════
+      // LAYER 1: Cloudflare Cache API check (per-datacenter, <1ms)
+      // This runs BEFORE any D1 queries or KV reads.
+      // The Cache API key is the full URL + locale, so we need to detect
+      // locale from the URL path first (no D1 needed for that).
+      // ══════════════════════════════════════════════════════════════════
 
-      if (!tenant) {
+      const route = matchRoute(pathname);
+      const routeLocale = route.locale ?? 'default';
+      const cacheable = isCacheablePage(pathname, request.method);
+
+      if (cacheable) {
+        timing.mark('cache-api');
+        const cache = caches.default;
+        const cacheRequest = buildCacheKey(request, routeLocale);
+
+        const cachedResponse = await cache.match(cacheRequest);
+        timing.measure('cache-api', 'Cache API lookup');
+
+        if (cachedResponse) {
+          // Cache HIT — return immediately, 0 D1 queries!
+          const headers = new Headers(cachedResponse.headers);
+          headers.set('X-Cache', 'HIT');
+          headers.set('Server-Timing', `cache-api;desc="Cache API HIT";dur=0, total;dur=${Math.round(performance.now() - totalStart)}`);
+
+          return new Response(cachedResponse.body, {
+            status: cachedResponse.status,
+            headers,
+          });
+        }
+      }
+
+      // ══════════════════════════════════════════════════════════════════
+      // LAYER 2: Resolve tenant bundle (KV cached: tenant + locale + settings)
+      // Single KV read replaces 3-5 D1 queries on cache hit.
+      // On KV miss: 1 D1 query (tenant) + 1 db.batch (configs) = 2 round-trips.
+      // ══════════════════════════════════════════════════════════════════
+
+      timing.mark('tenant');
+      const bundle = await resolveTenantBundle(hostname, env.DB, env.CACHE);
+      timing.measure('tenant', 'Tenant resolution');
+
+      if (!bundle) {
         return new Response(render404Page(null, null), {
           status: 404,
           headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'public, max-age=60' },
         });
       }
 
-      // ─── Analytics tracking proxy ────────────────────────────────────
+      const { tenant, localeConfig, settings } = bundle;
+
+      // ── Analytics tracking proxy ────────────────────────────────────
       if (pathname === '/api/track' && request.method === 'POST') {
         try {
           const body = await request.json() as { path?: string; referrer?: string };
@@ -71,13 +183,14 @@ export default {
             ? 'https://api.framevideos.com/api/v1/analytics/track'
             : 'https://api-staging.framevideos.com/api/v1/analytics/track';
 
-          const trackFetch = fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(trackPayload),
-          }).catch(() => {});
-
-          await trackFetch;
+          // Fire and forget — don't block response
+          ctx.waitUntil(
+            fetch(apiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(trackPayload),
+            }).catch(() => {})
+          );
         } catch {
           // Never break on tracking errors
         }
@@ -104,13 +217,11 @@ export default {
         });
       }
 
-      // Load locale config + check redirects in parallel
-      const [localeConfig, redirect] = await Promise.all([
-        getTenantLocaleConfig(env.DB, tenant.tenantId),
-        checkRedirect(env.DB, tenant.tenantId, pathname),
-      ]);
+      // ── Check redirects (1 D1 query, only for non-cached requests) ──
+      timing.mark('redirect');
+      const redirect = await checkRedirect(env.DB, tenant.tenantId, pathname);
+      timing.measure('redirect', 'Redirect check');
 
-      // Handle redirect
       if (redirect) {
         return new Response(null, {
           status: redirect.statusCode,
@@ -162,34 +273,16 @@ export default {
         return handleAdminRequest(pathname, env, tenant);
       }
 
-      // ─── Full-page KV cache (5 min for public pages) ───────────────
-      const isPublicPage = !pathname.startsWith('/admin') && !pathname.startsWith('/advertiser') && request.method === 'GET';
-      // Route matching + cache key
-      const route = matchRoute(pathname);
-      const cacheLocale = route.locale ?? 'default';
-      const cacheKey = isPublicPage ? `page:${tenant.tenantId}:${cacheLocale}:${pathname}` : null;
+      // ══════════════════════════════════════════════════════════════════
+      // LAYER 3: Render page (D1 queries via db.batch())
+      // At this point we have tenant + locale + settings from KV bundle.
+      // Only content queries remain (batched).
+      // ══════════════════════════════════════════════════════════════════
 
-      if (cacheKey) {
-        const cachedHtml = await env.CACHE.get(cacheKey);
-        if (cachedHtml) {
-          const response = new Response(cachedHtml, {
-            headers: {
-              'Content-Type': 'text/html;charset=UTF-8',
-              'Cache-Control': 'public, max-age=60, s-maxage=300',
-              'Content-Language': cacheLocale === 'default' ? 'pt' : cacheLocale,
-              'X-Tenant-Id': tenant.tenantId,
-              'X-Cache': 'HIT',
-            },
-          });
-          return addSecurityHeaders(response);
-        }
-      }
-
-      // Load settings + ad placements in parallel (not sequential)
-      const [settings, adPlacements] = await Promise.all([
-        getSiteSettings(env.DB, tenant.tenantId, tenant.tenantName),
-        getActivePlacements(env.DB, tenant.tenantId).catch(() => ({ header: null, sidebar: null, inContent: null })),
-      ]);
+      // Load ad placements (1 D1 query — can run in parallel with render)
+      timing.mark('ads');
+      const adPlacements = await getActivePlacements(env.DB, tenant.tenantId).catch(() => ({ header: null, sidebar: null, inContent: null }));
+      timing.measure('ads', 'Ad placements');
 
       let adSlots: AdSlotConfig | undefined;
       const apiBaseUrl = env.ENVIRONMENT === 'production'
@@ -220,6 +313,7 @@ export default {
         }
       }
 
+      timing.mark('render');
       let html: string | null = null;
 
       switch (route.handler) {
@@ -290,6 +384,8 @@ export default {
         }
       }
 
+      timing.measure('render', 'Page render');
+
       if (!html) {
         return addSecurityHeaders(new Response(render404Page(settings, tenant), {
           status: 404,
@@ -301,22 +397,31 @@ export default {
         }));
       }
 
-      // Write to KV cache (5 min TTL)
-      if (cacheKey && html) {
-        try { await env.CACHE.put(cacheKey, html, { expirationTtl: 300 }); } catch { /* ignore cache write errors */ }
+      // ── Build response ──
+      const totalDur = Math.round((performance.now() - totalStart) * 100) / 100;
+      timing.add('total', totalDur, 'Total');
+
+      const responseHeaders: Record<string, string> = {
+        'Content-Type': 'text/html;charset=UTF-8',
+        'Cache-Control': 'public, max-age=60, s-maxage=300',
+        'X-Tenant-Id': tenant.tenantId,
+        'X-Cache': 'MISS',
+        'Content-Language': locale,
+        'Vary': 'Accept-Language',
+        'Server-Timing': timing.toString(),
+      };
+
+      const response = addSecurityHeaders(new Response(html, {
+        status: 200,
+        headers: responseHeaders,
+      }));
+
+      // ── Write to caches (non-blocking via waitUntil) ──
+      if (cacheable && html) {
+        ctx.waitUntil(writeToCaches(request, routeLocale, html, locale, tenant.tenantId, env.CACHE));
       }
 
-      return addSecurityHeaders(new Response(html, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/html;charset=UTF-8',
-          'Cache-Control': 'public, max-age=60, s-maxage=300',
-          'X-Tenant-Id': tenant.tenantId,
-          'X-Cache': 'MISS',
-          'Content-Language': locale,
-          'Vary': 'Accept-Language',
-        },
-      }));
+      return response;
     } catch (err) {
       console.error('[tenant-site] Error:', err);
       return new Response(render404Page(null, null), {
@@ -326,3 +431,43 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+
+// ─── Background cache write (non-blocking) ──────────────────────────────────
+
+async function writeToCaches(
+  request: Request,
+  routeLocale: string,
+  html: string,
+  locale: string,
+  tenantId: string,
+  kvCache: KVNamespace,
+): Promise<void> {
+  try {
+    // Write to Cloudflare Cache API (per-datacenter, instant on next request)
+    const cache = caches.default;
+    const cacheRequest = buildCacheKey(request, routeLocale);
+    const cacheResponse = new Response(html, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html;charset=UTF-8',
+        'Cache-Control': 'public, max-age=60, s-maxage=300',
+        'X-Tenant-Id': tenantId,
+        'X-Cache': 'HIT',
+        'Content-Language': locale,
+        'Vary': 'Accept-Language',
+      },
+    });
+    await cache.put(cacheRequest, cacheResponse);
+  } catch {
+    // Cache write failures are non-critical
+  }
+
+  try {
+    // Also write to KV for cross-datacenter cache warming
+    const pathname = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
+    const kvKey = `page:${tenantId}:${routeLocale}:${pathname}`;
+    await kvCache.put(kvKey, html, { expirationTtl: 300 });
+  } catch {
+    // KV write failures are non-critical
+  }
+}

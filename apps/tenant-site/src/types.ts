@@ -83,3 +83,12 @@ export interface RouteMatch {
   params: Record<string, string>;
   locale?: string;
 }
+
+/** Cached tenant bundle — tenant + locale config + site settings in a single KV entry */
+export interface TenantBundle {
+  tenant: TenantInfo;
+  localeConfig: LocaleConfig;
+  settings: SiteSettings;
+  /** Unix timestamp (ms) when this bundle was cached */
+  cachedAt: number;
+}
