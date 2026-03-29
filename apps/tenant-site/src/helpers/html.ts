@@ -26,10 +26,10 @@ export function formatViews(count: number): string {
   return String(count);
 }
 
-export function videoCard(v: VideoItem, localePrefix = '', priority: boolean | 'high' = false): string {
+export function videoCard(v: VideoItem, localePrefix = '', eager = false): string {
   const dur = formatDuration(v.durationSeconds);
   const views = formatViews(v.viewCount);
-  const loadAttr = priority === 'high' ? 'loading="eager" fetchpriority="high" decoding="async"' : priority ? 'loading="eager" decoding="async"' : 'loading="lazy" decoding="async"';
+  const loadAttr = eager ? 'loading="eager" fetchpriority="high" decoding="async"' : 'loading="lazy" decoding="async"';
   return `<a href="${localePrefix}/video/${esc(v.slug)}" class="group block bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all">
   <div class="relative aspect-video bg-gray-800">
     ${v.thumbnailUrl
@@ -52,7 +52,7 @@ export function videoGrid(videos: VideoItem[], localePrefix = ''): string {
       <p class="text-lg">Nenhum vídeo encontrado</p>
     </div>`;
   }
-  return `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">${videos.map((v, i) => videoCard(v, localePrefix, i === 0 ? 'high' : i < 4 ? true : false)).join('')}</div>`;
+  return `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">${videos.map((v, i) => videoCard(v, localePrefix, i === 0)).join('')}</div>`;
 }
 
 /** Returns the thumbnail URL of the first video in an array, for LCP preload hints */
