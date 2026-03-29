@@ -26,10 +26,10 @@ export function formatViews(count: number): string {
   return String(count);
 }
 
-export function videoCard(v: VideoItem, localePrefix = '', eager = false): string {
+export function videoCard(v: VideoItem, localePrefix = '', priority: boolean | 'high' = false): string {
   const dur = formatDuration(v.durationSeconds);
   const views = formatViews(v.viewCount);
-  const loadAttr = eager ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"';
+  const loadAttr = priority === 'high' ? 'loading="eager" fetchpriority="high" decoding="async"' : priority ? 'loading="eager" decoding="async"' : 'loading="lazy" decoding="async"';
   return `<a href="${localePrefix}/video/${esc(v.slug)}" class="group block bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all">
   <div class="relative aspect-video bg-gray-800">
     ${v.thumbnailUrl
@@ -40,19 +40,19 @@ export function videoCard(v: VideoItem, localePrefix = '', eager = false): strin
   </div>
   <div class="p-3">
     <h3 class="text-sm font-medium text-gray-100 line-clamp-2 group-hover:text-purple-400 transition-colors">${esc(v.title || 'Sem título')}</h3>
-    <p class="text-xs text-gray-500 mt-1">${v.channelName ? esc(v.channelName) + ' • ' : ''}${views} visualizações</p>
+    <p class="text-xs text-gray-400 mt-1">${v.channelName ? esc(v.channelName) + ' • ' : ''}${views} visualizações</p>
   </div>
 </a>`;
 }
 
 export function videoGrid(videos: VideoItem[], localePrefix = ''): string {
   if (videos.length === 0) {
-    return `<div class="text-center py-16 text-gray-500">
+    return `<div class="text-center py-16 text-gray-400">
       <svg class="w-16 h-16 mx-auto mb-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
       <p class="text-lg">Nenhum vídeo encontrado</p>
     </div>`;
   }
-  return `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">${videos.map((v, i) => videoCard(v, localePrefix, i === 0)).join('')}</div>`;
+  return `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">${videos.map((v, i) => videoCard(v, localePrefix, i === 0 ? 'high' : i < 4 ? true : false)).join('')}</div>`;
 }
 
 /** Returns the thumbnail URL of the first video in an array, for LCP preload hints */

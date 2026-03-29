@@ -13,12 +13,12 @@ export async function renderCategoriesPage(db: D1Database, tenant: TenantInfo, s
   let content = `<h1 class="text-2xl font-bold mb-6">Categorias</h1>`;
 
   if (categories.length === 0) {
-    content += `<p class="text-gray-500 text-center py-16">Nenhuma categoria disponível</p>`;
+    content += `<p class="text-gray-400 text-center py-16">Nenhuma categoria disponível</p>`;
   } else {
     content += `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
       ${categories.map((c) => `<a href="${lp}/category/${esc(c.slug)}" class="bg-gray-900 rounded-lg p-5 text-center hover:bg-gray-800 hover:ring-1 hover:ring-purple-500/30 transition-all group">
         <p class="font-medium text-gray-200 group-hover:text-purple-400 transition-colors">${esc(c.name)}</p>
-        <p class="text-sm text-gray-500 mt-1">${c.videoCount} vídeo${c.videoCount !== 1 ? 's' : ''}</p>
+        <p class="text-sm text-gray-400 mt-1">${c.videoCount} vídeo${c.videoCount !== 1 ? 's' : ''}</p>
         ${c.description ? `<p class="text-xs text-gray-600 mt-2 line-clamp-2">${esc(c.description)}</p>` : ''}
       </a>`).join('')}
     </div>`;
@@ -62,10 +62,10 @@ export async function renderCategoryPage(db: D1Database, tenant: TenantInfo, set
   });
 
   let content = `<div class="mb-6">
-    <nav class="text-sm text-gray-500 mb-2"><a href="${lp}/categories" class="hover:text-gray-300">Categorias</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(category.name)}</span></nav>
+    <nav class="text-sm text-gray-400 mb-2"><a href="${lp}/categories" class="hover:text-gray-300">Categorias</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(category.name)}</span></nav>
     <h1 class="text-2xl font-bold">${esc(category.name)}</h1>
     ${category.description ? `<p class="text-gray-400 text-sm mt-1">${esc(category.description)}</p>` : ''}
-    <p class="text-gray-500 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''}</p>
+    <p class="text-gray-400 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''}</p>
   </div>`;
   content += videoGrid(videos, lp);
   content += pagination(page, totalPages, `${lp}/category/${slug}`);

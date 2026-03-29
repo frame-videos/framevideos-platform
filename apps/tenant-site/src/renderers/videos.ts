@@ -17,7 +17,7 @@ export async function renderVideosPage(db: D1Database, tenant: TenantInfo, setti
 
   let content = `<div class="mb-6">
     <h1 class="text-2xl font-bold">${search ? `Resultados para "${esc(search)}"` : 'Todos os Vídeos'}</h1>
-    <p class="text-gray-500 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''} encontrado${total !== 1 ? 's' : ''}</p>
+    <p class="text-gray-400 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''} encontrado${total !== 1 ? 's' : ''}</p>
   </div>`;
 
   content += videoGrid(videos, lp);
@@ -119,8 +119,8 @@ export async function renderVideoPage(db: D1Database, tenant: TenantInfo, settin
           </div>
           <div class="min-w-0">
             <h3 class="text-sm font-medium text-gray-200 line-clamp-2 group-hover:text-purple-400 transition-colors">${esc(r.title)}</h3>
-            <p class="text-xs text-gray-500 mt-1">${r.channelName ? esc(r.channelName) : ''}</p>
-            <p class="text-xs text-gray-500">${formatViews(r.viewCount)} visualizações</p>
+            <p class="text-xs text-gray-400 mt-1">${r.channelName ? esc(r.channelName) : ''}</p>
+            <p class="text-xs text-gray-400">${formatViews(r.viewCount)} visualizações</p>
           </div>
         </a>`).join('')}
         ${video.related.length === 0 ? '<p class="text-gray-600 text-sm">Nenhum vídeo relacionado</p>' : ''}

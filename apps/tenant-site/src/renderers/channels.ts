@@ -13,7 +13,7 @@ export async function renderChannelsPage(db: D1Database, tenant: TenantInfo, set
   let content = `<h1 class="text-2xl font-bold mb-6">Canais</h1>`;
 
   if (channels.length === 0) {
-    content += `<p class="text-gray-500 text-center py-16">Nenhum canal disponível</p>`;
+    content += `<p class="text-gray-400 text-center py-16">Nenhum canal disponível</p>`;
   } else {
     content += `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
       ${channels.map((ch) => `<a href="${lp}/channel/${esc(ch.slug)}" class="bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all group">
@@ -25,7 +25,7 @@ export async function renderChannelsPage(db: D1Database, tenant: TenantInfo, set
         </div>
         <div class="p-3">
           <p class="font-medium text-gray-200 text-sm truncate group-hover:text-purple-400 transition-colors">${esc(ch.name)}</p>
-          <p class="text-xs text-gray-500">${ch.videoCount} vídeo${ch.videoCount !== 1 ? 's' : ''}</p>
+          <p class="text-xs text-gray-400">${ch.videoCount} vídeo${ch.videoCount !== 1 ? 's' : ''}</p>
         </div>
       </a>`).join('')}
     </div>`;
@@ -59,13 +59,13 @@ export async function renderChannelPage(db: D1Database, tenant: TenantInfo, sett
   const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
 
   let content = `<div class="mb-6">
-    <nav class="text-sm text-gray-500 mb-2"><a href="${lp}/channels" class="hover:text-gray-300">Canais</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(channel.name)}</span></nav>
+    <nav class="text-sm text-gray-400 mb-2"><a href="${lp}/channels" class="hover:text-gray-300">Canais</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(channel.name)}</span></nav>
     <div class="flex items-start gap-4">
       ${channel.logoUrl ? `<img src="${esc(channel.logoUrl)}" alt="${esc(channel.name)}" width="64" height="64" class="w-16 h-16 rounded-lg object-contain bg-gray-800 p-2 shrink-0" />` : ''}
       <div>
         <h1 class="text-2xl font-bold">${esc(channel.name)}</h1>
         ${channel.description ? `<p class="text-gray-400 text-sm mt-1">${esc(channel.description)}</p>` : ''}
-        <p class="text-gray-500 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''}</p>
+        <p class="text-gray-400 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''}</p>
       </div>
     </div>
   </div>`;

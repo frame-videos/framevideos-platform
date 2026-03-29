@@ -13,7 +13,7 @@ export async function renderPerformersPage(db: D1Database, tenant: TenantInfo, s
   let content = `<h1 class="text-2xl font-bold mb-6">Modelos</h1>`;
 
   if (performers.length === 0) {
-    content += `<p class="text-gray-500 text-center py-16">Nenhum modelo disponível</p>`;
+    content += `<p class="text-gray-400 text-center py-16">Nenhum modelo disponível</p>`;
   } else {
     content += `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
       ${performers.map((p) => `<a href="${lp}/performer/${esc(p.slug)}" class="bg-gray-900 rounded-lg overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all group">
@@ -25,7 +25,7 @@ export async function renderPerformersPage(db: D1Database, tenant: TenantInfo, s
         </div>
         <div class="p-3">
           <p class="font-medium text-gray-200 text-sm truncate group-hover:text-purple-400 transition-colors">${esc(p.name)}</p>
-          <p class="text-xs text-gray-500">${p.videoCount} vídeo${p.videoCount !== 1 ? 's' : ''}</p>
+          <p class="text-xs text-gray-400">${p.videoCount} vídeo${p.videoCount !== 1 ? 's' : ''}</p>
         </div>
       </a>`).join('')}
     </div>`;
@@ -59,13 +59,13 @@ export async function renderPerformerPage(db: D1Database, tenant: TenantInfo, se
   const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
 
   let content = `<div class="mb-6">
-    <nav class="text-sm text-gray-500 mb-2"><a href="${lp}/performers" class="hover:text-gray-300">Modelos</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(performer.name)}</span></nav>
+    <nav class="text-sm text-gray-400 mb-2"><a href="${lp}/performers" class="hover:text-gray-300">Modelos</a> <span class="mx-1">›</span> <span class="text-gray-300">${esc(performer.name)}</span></nav>
     <div class="flex items-start gap-4">
       ${performer.imageUrl ? `<img src="${esc(performer.imageUrl)}" alt="${esc(performer.name)}" width="80" height="80" class="w-20 h-20 rounded-full object-cover shrink-0" />` : ''}
       <div>
         <h1 class="text-2xl font-bold">${esc(performer.name)}</h1>
         ${performer.bio ? `<p class="text-gray-400 text-sm mt-1">${esc(performer.bio)}</p>` : ''}
-        <p class="text-gray-500 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''}</p>
+        <p class="text-gray-400 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''}</p>
       </div>
     </div>
   </div>`;

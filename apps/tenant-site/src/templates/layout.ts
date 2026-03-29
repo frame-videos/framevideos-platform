@@ -73,7 +73,7 @@ export function layout(settings: SiteSettings, opts: LayoutOptions): string {
     }).join('');
 
     localeSwitcher = `<div class="relative" id="locale-switcher">
-      <button type="button" onclick="document.getElementById('locale-menu').classList.toggle('hidden')" class="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-gray-400 hover:text-white bg-gray-800/60 rounded-lg border border-gray-700/50 transition-colors">
+      <button type="button" aria-label="Selecionar idioma" onclick="document.getElementById('locale-menu').classList.toggle('hidden')" class="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-gray-400 hover:text-white bg-gray-800/60 rounded-lg border border-gray-700/50 transition-colors">
         <span>🌐</span><span>${esc(LOCALE_LABELS[locale] ?? locale)}</span>
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
       </button>
@@ -141,7 +141,7 @@ export function layout(settings: SiteSettings, opts: LayoutOptions): string {
           <form action="${lp}/search" method="GET" class="hidden sm:block">
             <div class="relative">
               <input type="text" name="q" placeholder="Buscar vídeos..." class="w-48 lg:w-64 pl-9 pr-3 py-1.5 bg-gray-800/80 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500" />
-              <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
             </div>
           </form>
           ${localeSwitcher}
@@ -149,7 +149,7 @@ export function layout(settings: SiteSettings, opts: LayoutOptions): string {
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
             Entrar
           </a>
-          <button id="mobile-menu-btn" class="md:hidden p-2 text-gray-400 hover:text-white">
+          <button id="mobile-menu-btn" aria-label="Menu" class="md:hidden p-2 text-gray-400 hover:text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
         </div>
@@ -191,7 +191,7 @@ export function layout(settings: SiteSettings, opts: LayoutOptions): string {
   <footer class="border-t border-gray-800/50 bg-[#0d0d14]/80 mt-auto">
     <div class="max-w-7xl mx-auto px-4 py-8">
       <div class="flex flex-col md:flex-row items-center justify-between gap-4">
-        <div class="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+        <div class="flex flex-wrap items-center gap-4 text-sm text-gray-400">
           <a href="${lp}/pages/about" class="hover:text-gray-300 transition-colors">Sobre</a>
           <a href="${lp}/pages/contact" class="hover:text-gray-300 transition-colors">Contato</a>
           <a href="${lp}/pages/terms" class="hover:text-gray-300 transition-colors">Termos</a>

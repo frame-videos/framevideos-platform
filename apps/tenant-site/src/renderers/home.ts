@@ -36,7 +36,7 @@ export async function renderHomepage(db: D1Database, tenant: TenantInfo, setting
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
         ${topCategories.map((c) => `<a href="${lp}/category/${esc(c.slug)}" class="bg-gray-900 rounded-lg p-4 text-center hover:bg-gray-800 hover:ring-1 hover:ring-purple-500/30 transition-all">
           <p class="font-medium text-gray-200 text-sm">${esc(c.name)}</p>
-          <p class="text-xs text-gray-500 mt-1">${c.videoCount} vídeos</p>
+          <p class="text-xs text-gray-400 mt-1">${c.videoCount} vídeos</p>
         </a>`).join('')}
       </div>
     </section>`;
@@ -58,7 +58,7 @@ export async function renderHomepage(db: D1Database, tenant: TenantInfo, setting
           </div>
           <div class="p-3">
             <p class="font-medium text-gray-200 text-sm truncate">${esc(p.name)}</p>
-            <p class="text-xs text-gray-500">${p.videoCount} vídeos</p>
+            <p class="text-xs text-gray-400">${p.videoCount} vídeos</p>
           </div>
         </a>`).join('')}
       </div>

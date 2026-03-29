@@ -13,7 +13,7 @@ export async function renderTagsPage(db: D1Database, tenant: TenantInfo, setting
   let content = `<h1 class="text-2xl font-bold mb-6">Tags</h1>`;
 
   if (tags.length === 0) {
-    content += `<p class="text-gray-500 text-center py-16">Nenhuma tag disponível</p>`;
+    content += `<p class="text-gray-400 text-center py-16">Nenhuma tag disponível</p>`;
   } else {
     content += `<div class="flex flex-wrap gap-2">
       ${tags.map((t) => `<a href="${lp}/tag/${esc(t.slug)}" class="bg-gray-900 px-4 py-2 rounded-lg text-sm hover:bg-gray-800 hover:text-purple-400 transition-colors">
@@ -51,9 +51,9 @@ export async function renderTagPage(db: D1Database, tenant: TenantInfo, settings
   const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
 
   let content = `<div class="mb-6">
-    <nav class="text-sm text-gray-500 mb-2"><a href="${lp}/tags" class="hover:text-gray-300">Tags</a> <span class="mx-1">›</span> <span class="text-gray-300">#${esc(tag.name)}</span></nav>
+    <nav class="text-sm text-gray-400 mb-2"><a href="${lp}/tags" class="hover:text-gray-300">Tags</a> <span class="mx-1">›</span> <span class="text-gray-300">#${esc(tag.name)}</span></nav>
     <h1 class="text-2xl font-bold">#${esc(tag.name)}</h1>
-    <p class="text-gray-500 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''}</p>
+    <p class="text-gray-400 text-sm mt-1">${total} vídeo${total !== 1 ? 's' : ''}</p>
   </div>`;
   content += videoGrid(videos, lp);
   content += pagination(page, totalPages, `${lp}/tag/${slug}`);

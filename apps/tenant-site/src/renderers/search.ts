@@ -22,7 +22,7 @@ export async function renderSearchPage(db: D1Database, tenant: TenantInfo, setti
         <div class="relative flex-1">
           <input type="text" name="q" value="${esc(query)}" placeholder="Digite sua busca..." autofocus
             class="w-full pl-10 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500" />
-          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
         </div>
         <button type="submit" class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors">
           Buscar
@@ -40,7 +40,7 @@ export async function renderSearchPage(db: D1Database, tenant: TenantInfo, setti
     const totalPages = Math.ceil(total / VIDEOS_PER_PAGE);
     lcpImage = firstThumbnailUrl(videos);
 
-    content += `<p class="text-gray-500 text-sm mb-4">${total} resultado${total !== 1 ? 's' : ''} encontrado${total !== 1 ? 's' : ''}</p>`;
+    content += `<p class="text-gray-400 text-sm mb-4">${total} resultado${total !== 1 ? 's' : ''} encontrado${total !== 1 ? 's' : ''}</p>`;
     content += videoGrid(videos, lp);
     content += pagination(page, totalPages, `${lp}/search?q=${encodeURIComponent(query)}`);
   } else {

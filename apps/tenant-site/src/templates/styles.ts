@@ -35,7 +35,7 @@ button{cursor:pointer;background:transparent}
 .text-center{text-align:center}
 /* Colors */
 .text-gray-100{color:#f3f4f6}.text-gray-200{color:#e5e7eb}.text-gray-300{color:#d1d5db}
-.text-gray-400{color:#9ca3af}.text-gray-500{color:#6b7280}
+.text-gray-400{color:#9ca3af}.text-gray-400{color:#6b7280}
 .text-purple-400{color:#c084fc}.text-purple-500{color:#a855f7}.text-indigo-400{color:#818cf8}
 .text-white{color:#fff}
 .bg-gray-800{background:#1f2937}.bg-gray-800\\/50{background:rgba(31,41,55,.5)}.bg-gray-800\\/60{background:rgba(31,41,55,.6)}

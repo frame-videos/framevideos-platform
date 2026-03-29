@@ -16,7 +16,7 @@ export function render404Page(settings: SiteSettings | null, tenant: TenantInfo 
   const content = `<div class="text-center py-20">
     <p class="text-6xl font-bold text-gray-700 mb-4">404</p>
     <h1 class="text-2xl font-bold mb-2">Página não encontrada</h1>
-    <p class="text-gray-500 mb-6">A página que você procura não existe ou foi removida.</p>
+    <p class="text-gray-400 mb-6">A página que você procura não existe ou foi removida.</p>
     <a href="/" class="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors">
       ← Voltar ao início
     </a>
