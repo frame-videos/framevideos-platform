@@ -11,5 +11,9 @@ binding = "DB"
 database_name = "frame-videos-db"
 database_id = "44b72903-9e99-4f3b-82ee-8bf0cfd0e793"
 
+routes = [
+  { pattern = "cdn.duovideos.com/*", zone_name = "duovideos.com" }
+]
+
 [vars]
 ALLOWED_ORIGINS = "*"
